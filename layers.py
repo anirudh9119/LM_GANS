@@ -146,12 +146,12 @@ def gru_layer(tparams,
         rval = _step(*(seqs+[init_state]+shared_vars))
     else:
         rval, updates = theano.scan(_step,
-                                    sequences=seqs,
-                                    outputs_info=init_states,
-                                    non_sequences=shared_vars,
-                                    name=prefix + '_layers',
-                                    n_steps=nsteps,
-                                    profile=profile,
-                                    strict=True)
+                                sequences=seqs,
+                                outputs_info=[init_state],
+                                non_sequences=shared_vars,
+                                name=prefix + '_layers',
+                                n_steps=nsteps,
+                                profile=profile,
+                                strict=True)
     rval = [rval]
     return rval
