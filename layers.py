@@ -83,27 +83,6 @@ def _slice(_x, n, dim):
         return _x[:, :, n*dim:(n+1)*dim]
     return _x[:, n*dim:(n+1)*dim]
 
-def _step_slice(m_, x_, xx_,  h_, U, Ux):
-    preact = tensor.dot(h_, U)
-    preact += x_
-
-    # reset and update gates
-    r = tensor.nnet.sigmoid(_slice(preact, 0, dim))
-    u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
-
-    # compute the hidden state proposal
-    preactx = tensor.dot(h_, Ux)
-    preactx = preactx * r
-    preactx = preactx + xx_
-
-    # hidden state proposal
-    h = tensor.tanh(preactx)
-
-    # leaky integrate and obtain next hidden state
-    h = u * h_ + (1. - u) * h
-    h = m_[:, None] * h + (1. - m_)[:, None] * h_
-
-    return h
 
 def gru_layer(tparams,
               state_below,
@@ -133,6 +112,28 @@ def gru_layer(tparams,
                     tparams[prefix + '_b'])
     state_belowx = (tensor.dot(state_below, tparams[prefix + '_Wx']) +
                     tparams[prefix + '_bx'])
+
+    def _step_slice(m_, x_, xx_,  h_, U, Ux):
+        preact = tensor.dot(h_, U)
+        preact += x_
+
+        # reset and update gates
+        r = tensor.nnet.sigmoid(_slice(preact, 0, dim))
+        u = tensor.nnet.sigmoid(_slice(preact, 1, dim))
+
+        # compute the hidden state proposal
+        preactx = tensor.dot(h_, Ux)
+        preactx = preactx * r
+        preactx = preactx + xx_
+
+        # hidden state proposal
+        h = tensor.tanh(preactx)
+
+        # leaky integrate and obtain next hidden state
+        h = u * h_ + (1. - u) * h
+        h = m_[:, None] * h + (1. - m_)[:, None] * h_
+
+        return h
 
     # prepare scan arguments
     seqs = [mask, state_below_, state_belowx]

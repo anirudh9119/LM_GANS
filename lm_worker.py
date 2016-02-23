@@ -141,7 +141,9 @@ def train(dim_word=100,  # word vector dimensionality
     # compile the optimizer, the actual computational graph is compiled here
     lr = tensor.scalar(name='lr')
     print 'Building optimizers...',
-    f_grad_shared, f_update = eval(optimizer)(lr, tparams, grads, inps, cost)
+    f_grad_shared, f_update = getattr(optimizers, optimizer)(lr, tparams,
+                                                             grads, inps, cost)
+
     print 'Done'
 
     print 'Optimization'
