@@ -1,6 +1,7 @@
 import os
 
-from lm_worker import train
+#from lm_worker import train
+from lm_gen import train
 
 
 def main(job_id, params):
@@ -37,4 +38,4 @@ if __name__ == '__main__':
         'decay-c': [0.],
         'use-dropout': [False],
         'learning-rate': [0.0001],
-        'reload': [False]})
+        'reload': [True]})
