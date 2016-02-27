@@ -3,10 +3,10 @@ import theano.tensor as T
 import numpy as np
 import random
 from lasagne.layers import DenseLayer, LSTMLayer
-
+from data_iterator import TextIterator
 from pad_list import pad_list
 import lasagne
-from data_iterator import TextIterator
+import numpy
 import cPickle as pkl
 
 '''
@@ -63,52 +63,56 @@ if __name__ == "__main__":
 
     seq_length = 30
     dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl'
-    valid_dataset='/data/lisatmp4/anirudhg/temp.en.tok'
+    valid_dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz'
 
-    gen_dataset = 'temp_workfile'
+    gen_dataset = 'generated_text.txt'
     batch_size  = 1
     n_words = 30000
     maxlen = 30
 
-
-     # load dictionary
+    # load dictionary
     with open(dictionary, 'rb') as f:
         worddicts = pkl.load(f)
 
     # invert dictionary
     worddicts_r = dict()
     for kk, vv in worddicts.iteritems():
-            worddicts_r[vv] = kk
+        worddicts_r[vv] = kk
 
     print 'Loading data'
     actual_sentences = TextIterator(valid_dataset,
-                         dictionary,
-                         n_words_source = n_words,
-                         batch_size = batch_size,
-                         maxlen=maxlen)
-
+                                    dictionary,
+                                    n_words_source = n_words,
+                                    batch_size = batch_size,
+                                    maxlen=maxlen)
 
     gen_sentences = TextIterator(gen_dataset,
-                         dictionary,
-                         n_words_source = n_words,
-                         batch_size = batch_size,
-                         maxlen=maxlen)
-
+                                 dictionary,
+                                 n_words_source = n_words,
+                                 batch_size = batch_size,
+                                 maxlen=maxlen)
 
     orig_sen = []
+    count = 0
     for x in actual_sentences:
-        orig_sen.append(x[0])
+        if len(x[0]) > 5 and count <=100000:
+            count = count +1;
+            orig_sen.append(x[0])
 
-    #orig_sen.append(numpy.zeros(30).tolist())
 
+    orig_sen.append(numpy.zeros(30).tolist())
+
+    print 'Done 1'
     orig_s = pad_list(orig_sen)
     print orig_s.shape
 
     gen_sen =  []
     for x in gen_sentences:
-        gen_sen.append(x[0])
+        if len(x[0]) > 5:
+            gen_sen.append(x[0])
 
-    #gen_sen.append(numpy.zeros(30).tolist())
+    print 'Done 2'
+    gen_sen.append(numpy.zeros(30).tolist())
 
     print len(gen_sen)
     print len(orig_sen)
@@ -116,11 +120,26 @@ if __name__ == "__main__":
     gen_s = pad_list(gen_sen)
     print gen_s.shape
 
+    gen_s = gen_s[0:gen_s.shape[0] - 1]
+    orig_s = orig_s[0:orig_s.shape[0] - 1]
+
+    print 'saving'
+
+    np.savez('orig_s.npz', orig_s)
+    np.savez('gen_s.npz', gen_s)
+
+    print 'saved'
+
     #5000 gen
     #2144 orig
 
-    orig_s = np.loadz('orig_s.npz')
-    gen_s = np.loadz('gen_s.npz')
+    orig_s = np.load('orig_s.npz')
+    gen_s = np.load('gen_s.npz')
+
+    orig_s = orig_s['arr_0']
+    gen_s = gen_s['arr_0']
+
+    print orig_s
 
     print "compiling"
 
@@ -128,16 +147,15 @@ if __name__ == "__main__":
 
     print "training started"
 
-    for i in range(0,20):
+    for i in range(0,40):
         u = random.uniform(0,1)
         indexGen = random.randint(0, 200 / 64)
         indexOrig = random.randint(0, 200 / 64)
-        print orig_s[indexOrig * 64 : (indexOrig + 1) * 64].shape
         if u < 0.5:
             d.train_real(orig_s[0 : 64].astype('int32'))
         else:
             d.train_fake(gen_s[0 : 64].astype('int32'))
 
-  #  print "real", d.evaluate(orig_s[100:4000 + 64].astype('int32'))
-  #  print "fake", d.evaluate(gen_s[1500:1500 + 64].astype('int32'))
+    print "real", d.evaluate(orig_s[0:64].astype('int32'))['c'].tolist()
+    print "fake", d.evaluate(gen_s[0:64].astype('int32'))['c'].tolist()
 

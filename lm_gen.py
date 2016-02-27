@@ -3,39 +3,21 @@ Build a simple neural language model using GRU units
 '''
 import theano
 import theano.tensor as tensor
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
-import ipdb
 import numpy
-import copy
 
 import os
-import warnings
-import sys
-import time
 
 
-import copy
-import logging
-import os
-import time
 
-import numpy
-import six
-import theano
-from six.moves import xrange
-from theano import tensor
-from toolz.dicttoolz import merge
-from collections import OrderedDict
 from data_iterator import TextIterator
-from utils import zipp, unzip, init_tparams, load_params, itemlist, dropout_layer, _p, init_tparams
-from layers import get_layer
+from utils import  load_params, itemlist, init_tparams
 import optimizers
 
 
-from lm_base import (init_params, build_model, build_sampler, save_params,
-                     gen_sample, pred_probs, prepare_data)
+from lm_base import (init_params, build_model, build_sampler,
+                     gen_sample)
 
 profile = False
 
@@ -162,10 +144,10 @@ def train(dim_word=100,  # word vector dimensionality
     if sampleFreq == -1:
         sampleFreq = len(train[0])/batch_size
 
-    f = open('workfile', 'w')
+    f = open('generated_text.txt', 'w')
     # Training loop
     # generate some samples with the model and display them
-    for jj in xrange(5000):
+    for jj in xrange(100000):
         sample, score = gen_sample(tparams, f_next,
                                    model_options, trng=trng,
                                    maxlen=30, argmax=False)
