@@ -3,7 +3,6 @@ Build a simple neural language model using GRU units
 '''
 import theano
 import theano.tensor as tensor
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 import cPickle as pkl
 import ipdb
@@ -11,31 +10,20 @@ import numpy
 import copy
 
 import os
-import warnings
-import sys
 import time
 
-
-import copy
-import logging
-import os
-import time
-
-import numpy
-import six
-import theano
 from six.moves import xrange
-from theano import tensor
-from toolz.dicttoolz import merge
-from collections import OrderedDict
 from data_iterator import TextIterator
-from utils import zipp, unzip, init_tparams, load_params, itemlist, dropout_layer, _p, init_tparams
-from layers import get_layer
+from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
 
-from lm_base import (init_params, build_model, build_sampler, save_params,
+
+
+from lm_base import (init_params, build_sampler,
                      gen_sample, pred_probs, prepare_data)
+
+from lm_discriminator import  build_GAN_model
 
 profile = False
 
@@ -103,12 +91,21 @@ def train(dim_word=100,  # word vector dimensionality
     tparams = init_tparams(params)
 
     # build the symbolic computational graph
-    trng, use_noise, \
-        x, x_mask, \
-        opt_ret, \
-        cost = \
-        build_model(tparams, model_options)
-    inps = [x, x_mask]
+#    trng, use_noise, \
+#        x, x_mask, \
+#        opt_ret, \
+#        cost = \
+#        build_model(tparams, model_options)
+
+    trng, use_noise,\
+        x, x_mask,\
+        opt_ret,\
+        cost,\
+        f_get,\
+        bern_dist = build_GAN_model(tparams, model_options)
+
+
+    inps = [x, x_mask, bern_dist]
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
@@ -176,7 +173,7 @@ def train(dim_word=100,  # word vector dimensionality
 
             # pad batch and create mask
             x, x_mask = prepare_data(x, maxlen=maxlen, n_words=n_words)
-
+            bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             if x is None:
                 print 'Minibatch with zero sample under length ', maxlen
                 uidx -= 1
@@ -185,7 +182,7 @@ def train(dim_word=100,  # word vector dimensionality
             ud_start = time.time()
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x, x_mask)
+            cost = f_grad_shared(x, x_mask, bern_dist.astype('float32'))
 
             # do the update on parameters
             f_update(lrate)
