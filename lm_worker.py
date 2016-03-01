@@ -1,5 +1,16 @@
 '''
 Build a simple neural language model using GRU units
+
+So on each time you have a matrix of probabilities, p
+p is a 64 x 30k matrix if we have 64 examples and 30k words
+
+your other input is the word embeddings
+either for the discriminator on the generator on the next step
+your op should sample from a multinomial correspond to p,
+grab the right word embeddings, and return them
+
+
+
 '''
 import theano
 import theano.tensor as tensor
@@ -18,12 +29,11 @@ from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
 
-
-
 from lm_base import (init_params, build_sampler,
                      gen_sample, pred_probs, prepare_data)
 
 from lm_discriminator import  build_GAN_model
+
 
 profile = False
 
@@ -91,21 +101,17 @@ def train(dim_word=100,  # word vector dimensionality
     tparams = init_tparams(params)
 
     # build the symbolic computational graph
-#    trng, use_noise, \
-#        x, x_mask, \
-#        opt_ret, \
-#        cost = \
-#        build_model(tparams, model_options)
 
     trng, use_noise,\
         x, x_mask,\
         opt_ret,\
         cost,\
         f_get,\
-        bern_dist = build_GAN_model(tparams, model_options)
+        bern_dist,\
+        uniform_sampling = build_GAN_model(tparams, model_options)
 
 
-    inps = [x, x_mask, bern_dist]
+    inps = [x, x_mask, bern_dist, uniform_sampling]
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
@@ -174,6 +180,9 @@ def train(dim_word=100,  # word vector dimensionality
             # pad batch and create mask
             x, x_mask = prepare_data(x, maxlen=maxlen, n_words=n_words)
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
+
+            uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
+
             if x is None:
                 print 'Minibatch with zero sample under length ', maxlen
                 uidx -= 1
@@ -182,7 +191,7 @@ def train(dim_word=100,  # word vector dimensionality
             ud_start = time.time()
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x, x_mask, bern_dist.astype('float32'))
+            cost = f_grad_shared(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))
 
             # do the update on parameters
             f_update(lrate)
