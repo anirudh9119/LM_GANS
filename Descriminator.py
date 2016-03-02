@@ -101,7 +101,10 @@ class discriminator:
         h_out_1_value = h_out_1.get_output_for(final_out)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
         h_out_3_value = h_out_3.get_output_for(h_out_2_value)
-        classification = T.nnet.sigmoid(h_out_3_value)
+        classification = T.clip(T.nnet.sigmoid(h_out_3_value), 0.01, 0.99)
+
+        self.classification = classification
+
         self.loss = T.mean(T.nnet.binary_crossentropy(output = classification.flatten(), target = target))
         self.params = lasagne.layers.get_all_params(h_out_1,trainable=True) + lasagne.layers.get_all_params(h_out_3,trainable=True) + [word_embeddings] + lasagne.layers.get_all_params(l_lstm_1, trainable = True) + lasagne.layers.get_all_params(l_lstm_2, trainable = True)
 
@@ -115,7 +118,7 @@ class discriminator:
 
         scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
 
-        updates = lasagne.updates.adam(scaled_grads, self.params)
+        updates = lasagne.updates.adam(scaled_grads, self.params, learning_rate = 0.0001)
         self.train_func = theano.function(inputs = [x, target, use_one_hot_input_flag, one_hot_input], outputs = {'l' : self.loss, 'c' : classification, 'g_w' : T.sum(T.sqr(T.grad(self.loss, word_embeddings)))}, updates = updates)
         self.evaluate_func = theano.function(inputs = [x, use_one_hot_input_flag, one_hot_input], outputs = {'c' : classification})
 

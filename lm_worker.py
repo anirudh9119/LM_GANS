@@ -28,6 +28,8 @@ from data_iterator import TextIterator
 from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
+import random
+
 from Descriminator import discriminator
 
 from lm_base import (init_params, build_sampler,
@@ -187,9 +189,11 @@ def train(dim_word=100,  # word vector dimensionality
 
     inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
     train_generator_against_discriminator = theano.function(inputs = inps_desc,
-                                                            outputs = {'loss' : -1.0 * d.loss},
+            outputs = {'loss' : -1.0 * d.loss, 'classification' : d.classification},
                                                             updates = generator_gan_updates,
                                                             on_unused_input='ignore')
+
+    last_d_update_type = "real"
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -238,9 +242,17 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x_temp.shape)
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
-            d.train_real_indices(x_temp.T.astype('int32'))
+            if last_d_update_type == "fake":
+                d_res_real = d.train_real_indices(x_temp.T.astype('int32'))
+                print "classification accuracy on real (percent called real)", (d_res_real['c'] > 0.5).sum()
 
-            output_gen_desc = train_generator_against_discriminator(
+                print "on real sentences", d_res_real['c'].tolist(), d_res_real['c'].mean()
+                last_d_update_type = "real"
+
+            do_gan_updates_on_gen = False
+
+            if do_gan_updates_on_gen:
+                output_gen_desc = train_generator_against_discriminator(
                                              x_temp.astype('int32'),
                                              x_temp_mask.astype('float32'),
                                              bern_dist.astype('float32'),
@@ -248,6 +260,8 @@ def train(dim_word=100,  # word vector dimensionality
                                              1,
                                              numpy.asarray([[]]).astype('int32'),
                                              [1] * 32)
+
+
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
@@ -293,7 +307,7 @@ def train(dim_word=100,  # word vector dimensionality
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
                     gensample.append(sample)
-                '''
+                
                     print 'Sample ', jj, ': ',
                     ss = sample
                     for vv in ss:
@@ -304,7 +318,7 @@ def train(dim_word=100,  # word vector dimensionality
                         else:
                             print 'UNK',
                     print
-                '''
+                
                 # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
                 print len(results)
@@ -326,7 +340,12 @@ def train(dim_word=100,  # word vector dimensionality
                     x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
 
                 q =  x_temp.T
-                d.train_fake_indices(q.astype('int32'))
+
+                if last_d_update_type == "real":
+                    d_res_fake = d.train_fake_indices(q.astype('int32'))
+                    print "classifications for fake samples (percent called fake)", (d_res_fake['c'] < 0.5).sum()
+                    print "fake sentences", d_res_fake['c'].tolist(), d_res_fake['c'].mean()
+                    last_d_update_type = "fake"
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
