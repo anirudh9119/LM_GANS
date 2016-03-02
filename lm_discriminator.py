@@ -82,13 +82,28 @@ def build_GAN_model(tparams, options):
 
     temp_x = x.flatten()
     output_mask = bern_dist.flatten()
+
+
 #   ind_new_mask = ifelse(tensor.eq(output_mask, 0),ind_max, temp_x)
+#   emb = ifelse(tensor.eq(output_mask[0], 0), theano.dot(one_hot_sampled, tparams['Wemb']), tparams['Wemb'][temp_x])
 
-    f_get =  theano.function([x, x_mask, uniform_sampling],[logit_shp, logit, probs, ind_max, one_hot_sampled])
+    ones_vec = tensor.switch(tensor.lt(temp_x, 30000), 1, 0)
+    ones_vec = tensor.cast(ones_vec, 'int32')
 
-    # input
-    emb = ifelse(tensor.eq(output_mask[0], 0), theano.dot(one_hot_sampled, tparams['Wemb']),tparams['Wemb'][temp_x])
-#    emb = tensor.switch(tensor.eq(output_mask, 0), theano.dot(one_hot_sampled, tparams['Wemb']),tparams['Wemb'][temp_x])
+    cum_sum = tensor.extra_ops.cumsum(ones_vec)
+    cum_sum = tensor.switch(tensor.gt(cum_sum, 0), cum_sum -1, 0)
+    new_emb =  theano.dot(one_hot_sampled, tparams['Wemb'])
+
+
+    disc_emb = new_emb[cum_sum]
+    gen_emb = tparams['Wemb'][temp_x]
+    emb = tensor.switch(tensor.eq(output_mask, 0), disc_emb.T, gen_emb.T)
+    emb = emb.T
+
+    f_get =  theano.function([x, x_mask, bern_dist, uniform_sampling],[probs, ind_max,one_hot_sampled,
+                                                            ones_vec, cum_sum, new_emb, emb])
+
+
     emb = emb.reshape([n_timesteps, n_samples, options['dim_word']])
     emb_shifted = tensor.zeros_like(emb)
     emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])

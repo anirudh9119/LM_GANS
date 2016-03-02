@@ -191,6 +191,8 @@ def train(dim_word=100,  # word vector dimensionality
                                                             updates = generator_gan_updates,
                                                             on_unused_input='ignore')
 
+    last_d_update_type = "real"
+    do_gan_updates_on_gen = False
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
         n_samples = 0
@@ -206,7 +208,6 @@ def train(dim_word=100,  # word vector dimensionality
                 print 'Minibatch with zero sample under length ', maxlen
                 uidx -= 1
                 continue
-            #print x.shape
 
             number_of_examples = x.shape[1]
             to_be_append = batch_size - number_of_examples
@@ -239,20 +240,25 @@ def train(dim_word=100,  # word vector dimensionality
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
             d.train_real_indices(x_temp.T.astype('int32'))
+            if last_d_update_type == "fake":
+                d_res_real = d.train_real_indices(x_temp.T.astype('int32'))
+                print "classification accuracy on real (percent called real)", (d_res_real['c'] > 0.5).sum()
+                print "on real sentences", d_res_real['c'].tolist(), d_res_real['c'].mean()
+                last_d_update_type = "real"
 
-            output_gen_desc = train_generator_against_discriminator(
-                                             x_temp.astype('int32'),
-                                             x_temp_mask.astype('float32'),
-                                             bern_dist.astype('float32'),
-                                             uniform_sampling.astype('float32'),
-                                             1,
-                                             numpy.asarray([[]]).astype('int32'),
-                                             [1] * 32)
+
+            if do_gan_updates_on_gen:
+                output_gen_desc = train_generator_against_discriminator(
+                                                x_temp.astype('int32'),
+                                                x_temp_mask.astype('float32'),
+                                                bern_dist.astype('float32'),
+                                                uniform_sampling.astype('float32'),
+                                                1,
+                                                numpy.asarray([[]]).astype('int32'),
+                                                [1] * 32)
+
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
-
-            #logit_shp, logit, probs, ind_max, one_hot_sampled = f_get(x, x_mask, uniform_sampling)
-
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x_temp.astype('int32'), x_temp_mask.astype('float32'),
@@ -293,7 +299,6 @@ def train(dim_word=100,  # word vector dimensionality
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
                     gensample.append(sample)
-                '''
                     print 'Sample ', jj, ': ',
                     ss = sample
                     for vv in ss:
@@ -304,7 +309,6 @@ def train(dim_word=100,  # word vector dimensionality
                         else:
                             print 'UNK',
                     print
-                '''
                 # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
                 print len(results)
@@ -326,7 +330,15 @@ def train(dim_word=100,  # word vector dimensionality
                     x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
 
                 q =  x_temp.T
-                d.train_fake_indices(q.astype('int32'))
+
+                if last_d_update_type == "real":
+                    d_res_fake = d.train_fake_indices(q.astype('int32'))
+                    print "classifications for fake samples (percent called fake)", (d_res_fake['c'] < 0.5).sum()
+                    print "fake sentences", d_res_fake['c'].tolist(), d_res_fake['c'].mean()
+                    last_d_update_type = "fake"
+
+
+
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
