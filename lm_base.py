@@ -40,7 +40,7 @@ def save_params(params, filename, symlink=None):
 
 
 # batch preparation, returns padded batch and mask
-def prepare_data(seqs_x, maxlen=None, n_words=30000):
+def prepare_data(seqs_x, maxlen=None, n_words=30000, minlen=10):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
 
@@ -49,7 +49,7 @@ def prepare_data(seqs_x, maxlen=None, n_words=30000):
         new_seqs_x = []
         new_lengths_x = []
         for l_x, s_x in zip(lengths_x, seqs_x):
-            if l_x < maxlen:
+            if l_x < maxlen and l_x >= minlen:
                 new_seqs_x.append(s_x)
                 new_lengths_x.append(l_x)
         lengths_x = new_lengths_x
