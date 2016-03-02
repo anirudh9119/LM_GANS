@@ -180,12 +180,13 @@ def train(dim_word=100,  # word vector dimensionality
 
     generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values())
 
-    inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices]
+    inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
     train_generator_against_discriminator = theano.function(inputs = inps_desc,
                                                             outputs = {'loss' : -1.0 * d.loss},
                                                             updates = generator_gan_updates,
                                                             on_unused_input='ignore')
 
+    print 'training gen against disc'
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -229,27 +230,30 @@ def train(dim_word=100,  # word vector dimensionality
                 x_temp_mask  = numpy.vstack([x_temp_mask, numpy.reshape(numpy.zeros(32), (1,32))])
 
 
-            bern_dist = numpy.random.binomial(1, .5, size=x.shape)
-            uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
+            bern_dist = numpy.random.binomial(1, .5, size=x_temp.shape)
+            uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
             d.train_real_indices(x_temp.T.astype('int32'))
             output_gen_desc = train_generator_against_discriminator(
-                                             x_temp_mask.T.astype('int32'),
-                                             x_mask,
-                                             bern_dist,
-                                             uniform_sampling,
+                                             x_temp.astype('int32'),
+                                             x_temp_mask.astype('float32'),
+                                             bern_dist.astype('float32'),
+                                             uniform_sampling.astype('float32'),
                                              1,
-                                             numpy.asarray([[]]).astype('int32'))
-
+                                             numpy.asarray([[]]).astype('int32'),
+                                             [1] * 32)
+            #TODO: change hardcoded 32 to mb size
 
             ud_start = time.time()
 
             #logit_shp, logit, probs, ind_max, one_hot_sampled = f_get(x, x_mask, uniform_sampling)
 
-
+            print x_temp.shape
+            print x_temp_mask.shape
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))
+            cost = f_grad_shared(x_temp.astype('int32'), x_temp_mask.astype('float32'),
+                                 bern_dist.astype('float32'), uniform_sampling.astype('float32'))
 
             # do the update on parameters
             f_update(lrate)
