@@ -178,7 +178,12 @@ def train(dim_word=100,  # word vector dimensionality
 
     import lasagne
 
-    generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values())
+    all_grads = tensor.grad(-1.0 * d.loss, wrt=itemlist(tparams))
+    for j in range(0, len(all_grads)):
+         all_grads[j] = tensor.switch(tensor.isnan(all_grads[j]), tensor.zeros_like(all_grads[j]), all_grads[j])
+
+    scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
+    generator_gan_updates = lasagne.updates.adam(scaled_grads, tparams.values())
 
     inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
     train_generator_against_discriminator = theano.function(inputs = inps_desc,
@@ -234,7 +239,7 @@ def train(dim_word=100,  # word vector dimensionality
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
             d.train_real_indices(x_temp.T.astype('int32'))
-            '''
+
             output_gen_desc = train_generator_against_discriminator(
                                              x_temp.astype('int32'),
                                              x_temp_mask.astype('float32'),
@@ -244,7 +249,6 @@ def train(dim_word=100,  # word vector dimensionality
                                              numpy.asarray([[]]).astype('int32'),
                                              [1] * 32)
             #TODO: change hardcoded 32 to mb size
-            '''
             ud_start = time.time()
 
             #logit_shp, logit, probs, ind_max, one_hot_sampled = f_get(x, x_mask, uniform_sampling)
