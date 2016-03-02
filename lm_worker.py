@@ -263,7 +263,7 @@ def train(dim_word=100,  # word vector dimensionality
             # check for bad numbers
             if numpy.isnan(cost) or numpy.isinf(cost):
                 print 'NaN detected'
-                return 1.
+                continue;
 
             # verbose
             if numpy.mod(uidx, dispFreq) == 0:

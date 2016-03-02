@@ -52,6 +52,8 @@ class discriminator:
 
         target = T.ivector('target_vector')
 
+        self.target = target
+
         #word_embeddings = theano.shared(np.random.normal(size = ((number_words, 1, num_hidden))).astype('float32'))
 
         word_embeddings = theano.shared(np.random.normal(size = ((number_words, num_hidden))).astype('float32'))
