@@ -234,6 +234,7 @@ def train(dim_word=100,  # word vector dimensionality
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
             d.train_real_indices(x_temp.T.astype('int32'))
+            '''
             output_gen_desc = train_generator_against_discriminator(
                                              x_temp.astype('int32'),
                                              x_temp_mask.astype('float32'),
@@ -243,13 +244,11 @@ def train(dim_word=100,  # word vector dimensionality
                                              numpy.asarray([[]]).astype('int32'),
                                              [1] * 32)
             #TODO: change hardcoded 32 to mb size
-
+            '''
             ud_start = time.time()
 
             #logit_shp, logit, probs, ind_max, one_hot_sampled = f_get(x, x_mask, uniform_sampling)
 
-            print x_temp.shape
-            print x_temp_mask.shape
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x_temp.astype('int32'), x_temp_mask.astype('float32'),
