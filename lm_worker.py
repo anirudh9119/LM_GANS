@@ -28,6 +28,7 @@ from data_iterator import TextIterator
 from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
+from Descriminator import discriminator
 
 from lm_base import (init_params, build_sampler,
                      gen_sample, pred_probs, prepare_data)
@@ -108,10 +109,12 @@ def train(dim_word=100,  # word vector dimensionality
         cost,\
         f_get,\
         bern_dist,\
-        uniform_sampling = build_GAN_model(tparams, model_options)
+        uniform_sampling,\
+        one_hot_sampled = build_GAN_model(tparams, model_options)
 
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
+
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
@@ -169,6 +172,20 @@ def train(dim_word=100,  # word vector dimensionality
     uidx = 0
     estop = False
     bad_counter = 0
+
+    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = maxlen, mb_size = 32, one_hot_input = one_hot_sampled)
+    one_hot_vector_flag = d.use_one_hot_input_flag;
+
+    import lasagne
+
+    generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values())
+
+    inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices]
+    train_generator_against_discriminator = theano.function(inputs = inps_desc,
+                                                            outputs = {'loss' : -1.0 * d.loss},
+                                                            updates = generator_gan_updates,
+                                                            on_unused_input='ignore')
+
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -178,17 +195,58 @@ def train(dim_word=100,  # word vector dimensionality
             use_noise.set_value(1.)
 
             # pad batch and create mask
-            x, x_mask = prepare_data(x, maxlen=maxlen, n_words=n_words)
-            bern_dist = numpy.random.binomial(1, .5, size=x.shape)
-
-            uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
-
+            x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
             if x is None:
                 print 'Minibatch with zero sample under length ', maxlen
                 uidx -= 1
                 continue
+            #print x.shape
+
+            number_of_examples = x.shape[1]
+            to_be_append = batch_size - number_of_examples
+            x_temp  = x
+            x_temp_new = x
+            qw = x_temp[:,x.shape[1]-1]
+            for i  in range(to_be_append):
+                x_temp = numpy.hstack([x_temp, numpy.reshape(qw, (x.shape[0],1))])
+
+            #print x_temp.shape
+            to_be_append = maxlen  - x.shape[0]
+            for i in range(to_be_append):
+                x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
+
+
+            number_of_examples = x_mask.shape[1]
+            to_be_append = batch_size - number_of_examples
+            x_temp_mask  = x_mask
+            x_temp_new_mask = x_mask
+            qw = x_temp_mask[:,x_mask.shape[1]-1]
+            for i  in range(to_be_append):
+                x_temp_mask = numpy.hstack([x_temp_mask, numpy.reshape(qw, (x_mask.shape[0],1))])
+
+            to_be_append = maxlen  - x_mask.shape[0]
+            for i in range(to_be_append):
+                x_temp_mask  = numpy.vstack([x_temp_mask, numpy.reshape(numpy.zeros(32), (1,32))])
+
+
+            bern_dist = numpy.random.binomial(1, .5, size=x.shape)
+            uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
+
+            d.train_real_indices(x_temp.T.astype('int32'))
+            output_gen_desc = train_generator_against_discriminator(
+                                             x_temp_mask.T.astype('int32'),
+                                             x_mask,
+                                             bern_dist,
+                                             uniform_sampling,
+                                             1,
+                                             numpy.asarray([[]]).astype('int32'))
+
 
             ud_start = time.time()
+
+            #logit_shp, logit, probs, ind_max, one_hot_sampled = f_get(x, x_mask, uniform_sampling)
+
+
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))
@@ -222,10 +280,13 @@ def train(dim_word=100,  # word vector dimensionality
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
                 # FIXME: random selection?
-                for jj in xrange(5):
+                gensample = [];
+                for jj in xrange(32):
                     sample, score = gen_sample(tparams, f_next,
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
+                    gensample.append(sample)
+                '''
                     print 'Sample ', jj, ': ',
                     ss = sample
                     for vv in ss:
@@ -236,6 +297,29 @@ def train(dim_word=100,  # word vector dimensionality
                         else:
                             print 'UNK',
                     print
+                '''
+                # See wtf is going on ?
+                results = prepare_data(gensample, maxlen=30, n_words=30000)
+                print len(results)
+                genx, genx_mask = results[0], results[1]
+                #genx = genx.T
+                number_of_examples = genx.shape[1]
+                to_be_append = batch_size - number_of_examples
+
+                x_temp  = genx
+                x_temp_new = genx
+                qw = x_temp[:,genx.shape[1]-1]
+
+                for i  in range(to_be_append):
+                    x_temp = numpy.hstack([x_temp, numpy.reshape(qw, (genx.shape[0],1))])
+
+
+                to_be_append = maxlen  - x_temp.shape[0]
+                for i in range(to_be_append):
+                    x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
+
+                q =  x_temp.T
+                d.train_fake_indices(q.astype('int32'))
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:

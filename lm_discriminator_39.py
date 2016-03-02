@@ -14,7 +14,6 @@ from layers import get_layer
 
 
 
-
 profile = False
 
 def save_params(params, filename, symlink=None):
@@ -30,7 +29,7 @@ def save_params(params, filename, symlink=None):
 
 
 # build a training model
-def build_GAN_model(tparams, options):
+def build_GAN_model(tparams, options, descr):
     opt_ret = dict()
 
     trng = RandomStreams(1234)
@@ -53,6 +52,11 @@ def build_GAN_model(tparams, options):
     emb = emb_shifted
     opt_ret['emb'] = emb
 
+
+    # training the descriminator
+    data_matrix =  x.T
+    descr.train_real_indices(data_matrix.astype('int32'))
+
     # pass through gru layer, recurrence here
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
@@ -74,26 +78,33 @@ def build_GAN_model(tparams, options):
 
     ind_max =  probs.argmax(1)
 
+    #default_sample = tensor.sum(uniform_sampling) * 0.0 +
+    #tensor.extra_ops.to_one_hot(tensor.argmax(probs, axis = 1), 30000)
+
     one_hot_sampled = straight_through(probs, uniform_sampling)
-    one_hot_input = one_hot_sampled.reshape([logit_shp[0],logit_shp[1], logit_shp[2]])
     print "probs ndim", probs.ndim
     print "uniform_sampling ndim", uniform_sampling.ndim
+
+#   f_get =  theano.function([x, x_mask, uniform_sampling],[probs, uniform_sampling, default_sample, one_hot_sampled,
+#   tensor.grad(tensor.sum(tensor.sqr(one_hot_sampled)), probs)])
 
 
     temp_x = x.flatten()
     output_mask = bern_dist.flatten()
 #   ind_new_mask = ifelse(tensor.eq(output_mask, 0),ind_max, temp_x)
 
+
     f_get =  theano.function([x, x_mask, uniform_sampling],[logit_shp, logit, probs, ind_max, one_hot_sampled])
+
 
     # input
     emb = ifelse(tensor.eq(output_mask[0], 0), theano.dot(one_hot_sampled, tparams['Wemb']),tparams['Wemb'][temp_x])
-#    emb = tensor.switch(tensor.eq(output_mask, 0), theano.dot(one_hot_sampled, tparams['Wemb']),tparams['Wemb'][temp_x])
     emb = emb.reshape([n_timesteps, n_samples, options['dim_word']])
     emb_shifted = tensor.zeros_like(emb)
     emb_shifted = tensor.set_subtensor(emb_shifted[1:], emb[:-1])
     emb = emb_shifted
     opt_ret['emb'] = emb
+
 
     # pass through gru layer, recurrence here
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
@@ -122,7 +133,7 @@ def build_GAN_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    return trng, use_noise, x, x_mask, opt_ret, cost, f_get, bern_dist, uniform_sampling, one_hot_input
+    return trng, use_noise, x, x_mask, opt_ret, cost, f_get, bern_dist, uniform_sampling
 
 # build a sampler
 def build_GAN_sampler(tparams, options, trng):

@@ -1,4 +1,3 @@
-
 from lm_worker import train
 #from lm_gen import train
 
@@ -19,11 +18,11 @@ def main(job_id, params):
         optimizer=params['optimizer'][0],
         maxlen=30,
         batch_size=32,
-        valid_batch_size=16,
-        validFreq=5000,
+        valid_batch_size=32,
+        validFreq=1000,
         dispFreq=10,
         saveFreq=1000,
-        sampleFreq=1000,
+        sampleFreq=10,
         dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz',
         valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
         dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
