@@ -40,7 +40,7 @@ def save_params(params, filename, symlink=None):
 
 
 # batch preparation, returns padded batch and mask
-def prepare_data(seqs_x, maxlen=None, n_words=30000, minlen=10):
+def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
 
