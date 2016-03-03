@@ -40,7 +40,7 @@ def save_params(params, filename, symlink=None):
 
 
 # batch preparation, returns padded batch and mask
-def prepare_data(seqs_x, maxlen=None, n_words=30000, minlen=10):
+def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
 
@@ -227,7 +227,11 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
     for x in iterator:
         n_done += len(x)
 
-        x, x_mask = prepare_data(x, n_words=options['n_words'])
+        x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
+        if x is None:
+            print 'Minibatch with zero sample under length, in pred_probs'
+            continue
+
         bern_dist = numpy.random.binomial(1, .5, size=x.shape)
         uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
         pprobs = f_log_probs(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))
