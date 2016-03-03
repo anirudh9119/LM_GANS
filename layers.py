@@ -91,6 +91,7 @@ def gru_layer(tparams,
               mask=None,
               one_step=False,
               init_state=None,
+              backwards=False,
               **kwargs):
     if one_step:
         assert init_state, 'previous state must be provided'
@@ -153,6 +154,7 @@ def gru_layer(tparams,
                                 name=prefix + '_layers',
                                 n_steps=nsteps,
                                 profile=profile,
-                                strict=True)
+                                strict=True,
+                                go_backwards=backwards)
     rval = [rval]
     return rval

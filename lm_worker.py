@@ -183,7 +183,7 @@ def train(dim_word=100,  # word vector dimensionality
          all_grads[j] = tensor.switch(tensor.isnan(all_grads[j]), tensor.zeros_like(all_grads[j]), all_grads[j])
 
     scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
-    generator_gan_updates = lasagne.updates.adam(scaled_grads, tparams.values())
+    generator_gan_updates = lasagne.updates.adam(scaled_grads, tparams.values(), learning_rate = 0.0001)
 
     inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
     train_generator_against_discriminator = theano.function(inputs = inps_desc,
@@ -192,7 +192,8 @@ def train(dim_word=100,  # word vector dimensionality
                                                             on_unused_input='ignore')
 
     last_d_update_type = "real"
-    do_gan_updates_on_gen = False
+    do_gan_updates_on_gen = True
+
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
         n_samples = 0
@@ -248,6 +249,7 @@ def train(dim_word=100,  # word vector dimensionality
 
 
             if do_gan_updates_on_gen:
+                print "updating generator against discriminator"
                 output_gen_desc = train_generator_against_discriminator(
                                                 x_temp.astype('int32'),
                                                 x_temp_mask.astype('float32'),

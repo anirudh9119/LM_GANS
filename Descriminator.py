@@ -14,7 +14,8 @@ from to_one_hot import to_one_hot
 
 from theano.ifelse import ifelse
 
-
+from layers import param_init_gru, gru_layer
+from utils import init_tparams
 
 '''
 -Build a discriminator.
@@ -81,27 +82,32 @@ class discriminator:
         features = T.concatenate(feature_lst, 1)
 
         #example x sequence_position x feature
-        l_lstm_1 = LSTMLayer((seq_length, mb_size, num_hidden), num_units = num_hidden, nonlinearity = lasagne.nonlinearities.tanh, grad_clipping=100.0)
-        l_lstm_2 = LSTMLayer((seq_length, mb_size, num_hidden * 2), num_units = num_hidden, nonlinearity = lasagne.nonlinearities.tanh, grad_clipping=100.0, backwards = True)
-        l_lstm_3 = LSTMLayer((seq_length, mb_size, num_hidden * 2), num_units = num_hidden, nonlinearity = lasagne.nonlinearities.tanh, grad_clipping=100.0)
+        #l_lstm_1 = LSTMLayer((seq_length, mb_size, num_hidden), num_units = num_hidden, nonlinearity = lasagne.nonlinearities.tanh, grad_clipping=100.0)
 
-        lstm_1_out = l_lstm_1.get_output_for([features])
-        lstm_2_out = l_lstm_2.get_output_for([T.concatenate([lstm_1_out, features], axis = 2)])
-        lstm_3_out = l_lstm_3.get_output_for([T.concatenate([lstm_2_out, features], axis = 2)])
+        gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_hidden))
+        gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden * 2))
+        gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden * 2))
 
-        final_out = T.mean(lstm_3_out, axis = 1)
+
+        gru_1_out = gru_layer(gru_params_1,features.transpose(1,0,2),None, prefix = 'gru1')[0]
+        gru_2_out = gru_layer(gru_params_2,T.concatenate([gru_1_out, features.transpose(1,0,2)], axis = 2),None, prefix = 'gru2', backwards = True)[0]
+        gru_3_out = gru_layer(gru_params_3,T.concatenate([gru_2_out, features.transpose(1,0,2)], axis = 2), None, prefix = 'gru3')[0].transpose(1,0,2)
+
+        #lstm_3_out = l_lstm_3.get_output_for([T.concatenate([lstm_2_out, features], axis = 2)])
+
+        final_out = T.mean(gru_3_out, axis = 1)
 
         #final_out = T.mean(features, axis = 1)
-        h_out_1 = DenseLayer((mb_size, num_hidden), num_units = 2048, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
 
-        h_out_2 = DenseLayer((mb_size, 2048), num_units = 2048, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_2 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
 
-        h_out_3 = DenseLayer((mb_size, 2048), num_units = 1, nonlinearity=None)
+        #h_out_3 = DenseLayer((mb_size, 2048), num_units = 1, nonlinearity=None)
 
         h_out_1_value = h_out_1.get_output_for(final_out)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
-        h_out_3_value = h_out_3.get_output_for(h_out_2_value)
-        raw_y = h_out_3_value
+        #h_out_3_value = h_out_3.get_output_for(h_out_2_value)
+        raw_y = h_out_2_value
         classification = T.nnet.sigmoid(raw_y)
 
         #self.loss = T.mean(T.nnet.binary_crossentropy(output = classification.flatten(), target = target))
@@ -109,19 +115,22 @@ class discriminator:
 
         self.loss = T.mean(-1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten())))))
 
-        self.params = lasagne.layers.get_all_params(h_out_1,trainable=True) + lasagne.layers.get_all_params(h_out_3,trainable=True) + [word_embeddings] + lasagne.layers.get_all_params(l_lstm_1, trainable = True) + lasagne.layers.get_all_params(l_lstm_2, trainable = True)
-
+        self.params = [word_embeddings]
+        #self.params += lasagne.layers.get_all_params(l_lstm_1, trainable = True)
         self.params += lasagne.layers.get_all_params(h_out_2,trainable=True)
-        self.params += lasagne.layers.get_all_params(l_lstm_3,trainable=True)
+        self.params += lasagne.layers.get_all_params(h_out_1,trainable=True)
+
+        self.params += gru_params_1.values()
+        self.params += gru_params_2.values()
+        self.params += gru_params_3.values()
 
         all_grads = T.grad(self.loss, self.params)
 
         for j in range(0, len(all_grads)):
             all_grads[j] = T.switch(T.isnan(all_grads[j]), T.zeros_like(all_grads[j]), all_grads[j])
 
-        scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
+        updates = lasagne.updates.adam(all_grads, self.params, learning_rate = 0.001, beta1 = 0.5)
 
-        updates = lasagne.updates.adam(scaled_grads, self.params)
         self.train_func = theano.function(inputs = [x, target, use_one_hot_input_flag, one_hot_input], outputs = {'l' : self.loss, 'c' : classification, 'g_w' : T.sum(T.sqr(T.grad(self.loss, word_embeddings)))}, updates = updates)
         self.evaluate_func = theano.function(inputs = [x, use_one_hot_input_flag, one_hot_input], outputs = {'c' : classification})
 
@@ -157,7 +166,9 @@ if __name__ == "__main__":
 
     print "compiling"
 
-    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = seq_length, mb_size = 64)
+    one_hot_input = T.ftensor3()
+
+    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = seq_length, mb_size = 64, one_hot_input = one_hot_input)
 
     print "training started"
 
@@ -169,9 +180,9 @@ if __name__ == "__main__":
         indexGen = random.randint(15, 1250)
         indexOrig = random.randint(15, 1500)
         if u < 0.5:
-            d.train_real(orig_s[indexOrig * 64 : (indexOrig + 1) * 64].astype('int32'))
+            d.train_real_indices(orig_s[indexOrig * 64 : (indexOrig + 1) * 64].astype('int32'))
         else:
-            d.train_fake(gen_s[indexGen * 64 : (indexGen + 1) * 64].astype('int32'))
+            d.train_fake_indices(gen_s[indexGen * 64 : (indexGen + 1) * 64].astype('int32'))
 
         if i % 200 == 1:
 
@@ -182,7 +193,7 @@ if __name__ == "__main__":
 
             print "============Train=============="
 
-            print "acc", 0.5 * ((d.evaluate(orig_s[2000:2064].astype('int32'))['c'] > 0.5).sum() / 64.0 + (d.evaluate(gen_s[2000:2064].astype('int32'))['c'] < 0.5).sum() / 64.0)
+            print "acc", 0.5 * ((d.evaluate_indices(orig_s[2000:2064].astype('int32'))['c'] > 0.5).sum() / 64.0 + (d.evaluate_indices(gen_s[2000:2064].astype('int32'))['c'] < 0.5).sum() / 64.0)
 
             print "===========Validation============="
             realSum = 0.0
@@ -190,8 +201,8 @@ if __name__ == "__main__":
 
             for index in range(0,9):
 
-                realSum += (d.evaluate(orig_s[index * 64:(index + 1)*64].astype('int32'))['c'] > 0.5).sum()
-                fakeSum += (d.evaluate(gen_s[index*64:(index + 1)*64].astype('int32'))['c'] < 0.5).sum()
+                realSum += (d.evaluate_indices(orig_s[index * 64:(index + 1)*64].astype('int32'))['c'] > 0.5).sum()
+                fakeSum += (d.evaluate_indices(gen_s[index*64:(index + 1)*64].astype('int32'))['c'] < 0.5).sum()
 
             print "acc", 0.5 * (realSum / (64.0 * 9.0) + fakeSum / (64.0 * 9.0))
 
