@@ -106,6 +106,7 @@ class discriminator:
 
         #self.loss = T.mean(T.nnet.binary_crossentropy(output = classification.flatten(), target = target))
 
+
         self.loss = T.mean(-1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten())))))
 
         self.params = lasagne.layers.get_all_params(h_out_1,trainable=True) + lasagne.layers.get_all_params(h_out_3,trainable=True) + [word_embeddings] + lasagne.layers.get_all_params(l_lstm_1, trainable = True) + lasagne.layers.get_all_params(l_lstm_2, trainable = True)

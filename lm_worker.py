@@ -301,7 +301,7 @@ def train(dim_word=100,  # word vector dimensionality
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
 
-                    if len(sample) >=10  and len(sample) <= maxlen:
+                    if len(sample) >=10  and len(sample) < maxlen:
                         count_gen = count_gen + 1
                         gensample.append(sample)
                         print 'Sample ', count_gen, ': ',
@@ -345,7 +345,7 @@ def train(dim_word=100,  # word vector dimensionality
 
                 q =  x_temp.T
 
-                #Train on fake data.  
+                #Train on fake data.
                 if last_d_update_type == "real":
                     d_res_fake = d.train_fake_indices(q.astype('int32'))
                     print "classifications for fake samples (percent called fake)", (d_res_fake['c'] < 0.5).sum()
