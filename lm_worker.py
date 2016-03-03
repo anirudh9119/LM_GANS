@@ -294,21 +294,32 @@ def train(dim_word=100,  # word vector dimensionality
             if numpy.mod(uidx, sampleFreq) == 0:
                 # FIXME: random selection?
                 gensample = [];
-                for jj in xrange(32):
+                count_gen = 0;
+                while 1:
+                #for jj in xrange(32):
                     sample, score = gen_sample(tparams, f_next,
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
-                    gensample.append(sample)
-                    print 'Sample ', jj, ': ',
-                    ss = sample
-                    for vv in ss:
-                        if vv == 0:
-                            break
-                        if vv in worddicts_r:
-                            print worddicts_r[vv],
-                        else:
-                            print 'UNK',
-                    print
+
+                    if len(sample) >=10  and len(sample) <= maxlen:
+                        count_gen = count_gen + 1
+                        gensample.append(sample)
+                        print 'Sample ', count_gen, ': ',
+                        ss = sample
+                        for vv in ss:
+                            if vv == 0:
+                                break
+                            if vv in worddicts_r:
+                                print worddicts_r[vv],
+                            else:
+                                print 'UNK',
+                        print
+
+                    if count_gen >= 32:
+                        break
+
+
+
                 # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
                 genx, genx_mask = results[0], results[1]
