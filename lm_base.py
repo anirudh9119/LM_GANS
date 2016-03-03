@@ -56,7 +56,7 @@ def prepare_data(seqs_x, maxlen=None, n_words=30000, minlen=10):
         seqs_x = new_seqs_x
 
         if len(lengths_x) < 1:
-            return None, None, None, None
+            return None, None
 
     n_samples = len(seqs_x)
     maxlen_x = numpy.max(lengths_x) + 1

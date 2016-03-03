@@ -311,8 +311,11 @@ def train(dim_word=100,  # word vector dimensionality
                     print
                 # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
-                print len(results)
                 genx, genx_mask = results[0], results[1]
+
+                if genx is None:
+                    print 'Minibatch with zero sample under length ', maxlen
+                    continue
                 #genx = genx.T
                 number_of_examples = genx.shape[1]
                 to_be_append = batch_size - number_of_examples
