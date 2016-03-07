@@ -10,6 +10,8 @@ import ipdb
 import numpy
 import copy
 
+import numpy as np
+
 import os
 import warnings
 import sys
@@ -58,13 +60,10 @@ def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
         if len(lengths_x) < 1:
             return None, None
 
-    print "===================================================="
 
     n_samples = len(seqs_x)
     maxlen_x = numpy.max(lengths_x) + 1
 
-    print "NUMBER SAMPLES", n_samples
-    print "MAXLENX", maxlen_x
 
     x = numpy.zeros((maxlen_x, n_samples)).astype('int64')
     x_mask = numpy.zeros((maxlen_x, n_samples)).astype('float32')
@@ -201,10 +200,14 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
     next_w = -1 * numpy.ones((1,)).astype('int64')
     next_state = numpy.zeros((1, options['dim'])).astype('float32')
 
+    next_state_lst = []
+
     for ii in xrange(maxlen):
         inps = [next_w, next_state]
         ret = f_next(*inps)
         next_p, next_w, next_state = ret[0], ret[1], ret[2]
+
+        next_state_lst += [next_state]
 
         if argmax:
             nw = next_p[0].argmax()
@@ -215,8 +218,7 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
         if nw == 0:
             break
 
-    return sample, sample_score
-
+    return sample, sample_score, np.vstack(next_state_lst)
 
 # calculate the log probablities on a given corpus using language model
 def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):

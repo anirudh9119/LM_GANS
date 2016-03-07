@@ -30,8 +30,7 @@ import optimizers
 
 from Descriminator import discriminator
 
-from lm_base import (init_params, build_sampler,
-                     gen_sample, pred_probs, prepare_data)
+from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_data)
 
 from lm_discriminator import  build_GAN_model
 
@@ -110,19 +109,24 @@ def train(dim_word=100,  # word vector dimensionality
         f_get,\
         bern_dist,\
         uniform_sampling,\
-        one_hot_sampled = build_GAN_model(tparams, model_options)
+        one_hot_sampled, hidden_states = build_GAN_model(tparams, model_options)
 
+    trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled = build_GAN_model(tparams, model_options)
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
+    inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
 
+    get_hidden = theano.function(inps, outputs = {'hidden': hidden_states})
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
+
 
     # before any regularizer
     print 'Building f_log_probs...',
     f_log_probs = theano.function(inps, cost, profile=profile)
     print 'Done'
+
 
     cost = cost.mean()
 
@@ -173,8 +177,12 @@ def train(dim_word=100,  # word vector dimensionality
     estop = False
     bad_counter = 0
 
-    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = maxlen, mb_size = 32, one_hot_input = one_hot_sampled)
+    hidden_state_features_discriminator = tensor.ftensor3()
+
+    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = maxlen, mb_size = 64, one_hot_input = one_hot_sampled, hidden_state_features_discriminator = hidden_state_features_discriminator)
     one_hot_vector_flag = d.use_one_hot_input_flag;
+
+    #hidden_state_features_generator = d.hidden_state_features_generator
 
     import lasagne
 
@@ -186,13 +194,16 @@ def train(dim_word=100,  # word vector dimensionality
     generator_gan_updates = lasagne.updates.adam(scaled_grads, tparams.values(), learning_rate = 0.0001)
 
     inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
-    train_generator_against_discriminator = theano.function(inputs = inps_desc,
-                                                            outputs = {'loss' : -1.0 * d.loss},
-                                                            updates = generator_gan_updates,
-                                                            on_unused_input='ignore')
+    #train_generator_against_discriminator = theano.function(inputs = inps_desc,
+    #                                                        outputs = {'loss' : -1.0 * d.loss},
+    #                                                        updates = generator_gan_updates,
+    #                                                        on_unused_input='ignore')
+
+
+    #query_features = theano.function(inputs = inps_desc, outputs = {'gru_features' : gru_features}, on_unused_input = 'ignore')
 
     last_d_update_type = "real"
-    do_gan_updates_on_gen = True
+    do_gan_updates_on_gen = False
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -240,13 +251,30 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x_temp.shape)
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
-            d.train_real_indices(x_temp.T.astype('int32'))
-            if last_d_update_type == "fake":
-                d_res_real = d.train_real_indices(x_temp.T.astype('int32'))
-                print "classification accuracy on real (percent called real)", (d_res_real['c'] > 0.5).sum()
-                print "on real sentences", d_res_real['c'].tolist(), d_res_real['c'].mean()
-                last_d_update_type = "real"
+            q_real = x_temp.T.astype('int32')
+            q_real_mask = x_temp_mask
 
+            #if last_d_update_type == "fake":
+
+                #d_res_real = d.train_real_indices(x_temp.T.astype('int32'))
+                #print "classification accuracy on real (percent called real)", (d_res_real['c'] > 0.5).sum()
+                #print "on real sentences", d_res_real['c'].tolist(), d_res_real['c'].mean()
+                #last_d_update_type = "real"
+
+
+            #print "======================================================"
+            #print "QUERYING REAL AND FAKE FEATURES"
+            #res = query_features(x_temp.astype('int32'),
+            #                                    x_temp_mask.astype('float32'),
+            #                                    bern_dist.astype('float32'),
+            #                                    uniform_sampling.astype('float32'),
+            #                                    1,
+            #                                    numpy.asarray([[]]).astype('int32'),
+            #                                    [1] * 32)
+
+            #print "GRU FEATURES REAL DATA", res['gru_features'].shape
+
+            #print "======================================================"
 
             if do_gan_updates_on_gen:
                 print "updating generator against discriminator"
@@ -258,6 +286,9 @@ def train(dim_word=100,  # word vector dimensionality
                                                 1,
                                                 numpy.asarray([[]]).astype('int32'),
                                                 [1] * 32)
+
+
+
 
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
@@ -299,10 +330,12 @@ def train(dim_word=100,  # word vector dimensionality
                 count_gen = 0;
                 while 1:
                 #for jj in xrange(32):
-                    sample, score = gen_sample(tparams, f_next,
+                    sample, score, next_state_sampled = gen_sample(tparams, f_next,
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
 
+
+                    
                     if len(sample) >=10  and len(sample) < maxlen:
                         count_gen = count_gen + 1
                         gensample.append(sample)
@@ -347,15 +380,40 @@ def train(dim_word=100,  # word vector dimensionality
 
                 q =  x_temp.T
 
-                #Train on fake data.
-                if last_d_update_type == "real":
-                    d_res_fake = d.train_fake_indices(q.astype('int32'))
-                    print "classifications for fake samples (percent called fake)", (d_res_fake['c'] < 0.5).sum()
-                    print "fake sentences", d_res_fake['c'].tolist(), d_res_fake['c'].mean()
-                    last_d_update_type = "fake"
+                q_fake = q.astype('int32')
+
+                
 
 
+            #Store q_fake and q_real
 
+     
+                #d.train_real_indices(q_real)
+                #d.train_fake_indices(q_fake)
+                #print "q real shape", q_real[16:,:].shape
+                #print "q fake shape", q_fake[:16,:].shape
+
+                print "x shape", q_real.shape
+                print "x_mask shape", x_mask.shape
+                print "genx shape", genx.shape
+                print "genx_mask shape", genx_mask.shape
+
+                if x.shape[0] == 30 and genx.shape[0] == 30:
+
+                        h_real = get_hidden(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))['hidden']
+                        h_fake = get_hidden(genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))['hidden']
+
+                        print "h_real", h_real.shape
+                        print "h_fake", h_fake.shape
+
+                        results_map = d.train_real_fake_indices(q_real, q_fake, h_real, h_fake)
+
+                        print "================================="
+                        print "Discriminator Results"
+                        print "Accuracy", results_map['accuracy']
+                        print "================================="
+                else:
+                        print "can't run on gen/disc due to invalid shape"
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:

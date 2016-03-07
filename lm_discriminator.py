@@ -137,7 +137,7 @@ def build_GAN_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    return trng, use_noise, x, x_mask, opt_ret, cost, f_get, bern_dist, uniform_sampling, one_hot_input
+    return trng, use_noise, x, x_mask, opt_ret, cost, f_get, bern_dist, uniform_sampling, one_hot_input, get_layer("gru")[1](tparams, emb, options, prefix='encoder', mask=x_mask)[0]
 
 # build a sampler
 def build_GAN_sampler(tparams, options, trng):
@@ -186,4 +186,5 @@ def build_GAN_sampler(tparams, options, trng):
     f_next = theano.function(inps, outs, name='f_next', profile=profile)
     print 'Done'
 
-    return f_next, logit
+    return f_next, logit, next_state
+
