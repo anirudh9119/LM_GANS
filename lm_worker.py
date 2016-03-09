@@ -190,10 +190,10 @@ def train(dim_word=100,  # word vector dimensionality
 
     '''
         -Get two update functions:
-          -Update generator wrt. disc.  
-          -Update discriminator wrt. generator outputs and real outputs.  
+          -Update generator wrt. disc.
+          -Update discriminator wrt. generator outputs and real outputs.
 
-        -Use the same inputs for both.  
+        -Use the same inputs for both.
     '''
 
 
@@ -221,70 +221,17 @@ def train(dim_word=100,  # word vector dimensionality
                 uidx -= 1
                 continue
 
-            number_of_examples = x.shape[1]
-            to_be_append = batch_size - number_of_examples
-            x_temp  = x
-            x_temp_new = x
-            qw = x_temp[:,x.shape[1]-1]
-            for i  in range(to_be_append):
-                x_temp = numpy.hstack([x_temp, numpy.reshape(qw, (x.shape[0],1))])
+            bern_dist = numpy.random.binomial(1, .5, size=x.shape)
+            uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
-            #print x_temp.shape
-            to_be_append = maxlen  - x.shape[0]
-            for i in range(to_be_append):
-                x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
-
-
-            number_of_examples = x_mask.shape[1]
-            to_be_append = batch_size - number_of_examples
-            x_temp_mask  = x_mask
-            x_temp_new_mask = x_mask
-            qw = x_temp_mask[:,x_mask.shape[1]-1]
-            for i  in range(to_be_append):
-                x_temp_mask = numpy.hstack([x_temp_mask, numpy.reshape(qw, (x_mask.shape[0],1))])
-
-            to_be_append = maxlen  - x_mask.shape[0]
-            for i in range(to_be_append):
-                x_temp_mask  = numpy.vstack([x_temp_mask, numpy.reshape(numpy.zeros(32), (1,32))])
-
-
-            bern_dist = numpy.random.binomial(1, .5, size=x_temp.shape)
-            uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
-
-            x_real = x_temp.T.astype('int32')
-            x_real_mask = x_temp_mask.T
-
-            #if last_d_update_type == "fake":
-
-                #d_res_real = d.train_real_indices(x_temp.T.astype('int32'))
-                #print "classification accuracy on real (percent called real)", (d_res_real['c'] > 0.5).sum()
-                #print "on real sentences", d_res_real['c'].tolist(), d_res_real['c'].mean()
-                #last_d_update_type = "real"
-
-
-            #print "======================================================"
-            #print "QUERYING REAL AND FAKE FEATURES"
-            #res = query_features(x_temp.astype('int32'),
-            #                                    x_temp_mask.astype('float32'),
-            #                                    bern_dist.astype('float32'),
-            #                                    uniform_sampling.astype('float32'),
-            #                                    1,
-            #                                    numpy.asarray([[]]).astype('int32'),
-            #                                    [1] * 32)
-
-            #print "GRU FEATURES REAL DATA", res['gru_features'].shape
-
-            #print "======================================================"
-
-
-
-
+            x=x.T
+            x_mask=x_mask.T
 
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x_temp.astype('int32'), x_temp_mask.astype('float32'),
+            cost = f_grad_shared(x.astype('int32'), x_mask.astype('float32'),
                                  bern_dist.astype('float32'), uniform_sampling.astype('float32'))
 
             # do the update on parameters
@@ -325,7 +272,7 @@ def train(dim_word=100,  # word vector dimensionality
                                                maxlen=30, argmax=False)
 
 
-                    
+
                     if len(sample) >=10  and len(sample) < maxlen:
                         count_gen = count_gen + 1
                         gensample.append(sample)
@@ -352,33 +299,8 @@ def train(dim_word=100,  # word vector dimensionality
                 if genx is None:
                     print 'Minibatch with zero sample under length ', maxlen
                     continue
-                #genx = genx.T
-                number_of_examples = genx.shape[1]
-                to_be_append = batch_size - number_of_examples
-
-                x_temp  = genx
-                x_temp_new = genx
-                qw = x_temp[:,genx.shape[1]-1]
-
-                for i  in range(to_be_append):
-                    x_temp = numpy.hstack([x_temp, numpy.reshape(qw, (genx.shape[0],1))])
-
-
-                to_be_append = maxlen  - x_temp.shape[0]
-                for i in range(to_be_append):
-                    x_temp  = numpy.vstack([x_temp, numpy.reshape(numpy.zeros(32), (1,32))])
-
-                q =  x_temp.T
-
-                q_fake = q.astype('int32')
-
-                
-            #Store q_fake and q_real
-
-                x_mask = x_real_mask
                 genx = genx.T
                 genx_mask = genx_mask.T
-                x = x_real
 
                 print "x shape", x.shape
                 print "x_mask shape", x_mask.shape
