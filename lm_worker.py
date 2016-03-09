@@ -28,7 +28,7 @@ from data_iterator import TextIterator
 from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
-from Descriminator import discriminator
+from Descriminator_Hidden import discriminator
 
 from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_data)
 
@@ -109,14 +109,21 @@ def train(dim_word=100,  # word vector dimensionality
         f_get,\
         bern_dist,\
         uniform_sampling,\
-        one_hot_sampled, hidden_states = build_GAN_model(tparams, model_options)
+        one_hot_sampled, hidden_states, emb_obs = build_GAN_model(tparams, model_options)
 
-    trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled = build_GAN_model(tparams, model_options)
+    trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+
+    emb_joined = tensor.concatenate([emb_obs, emb_sampled], axis = 0)
+
+    #hidden states are minibatch x sequence x feature
+    hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 0)
+
+    hidden_states_joined = tensor.concatenate([hidden_states_joined, emb_joined], axis = 2)
+
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
 
-    get_hidden = theano.function(inps, outputs = {'hidden': hidden_states})
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
@@ -177,33 +184,26 @@ def train(dim_word=100,  # word vector dimensionality
     estop = False
     bad_counter = 0
 
-    hidden_state_features_discriminator = tensor.ftensor3()
+    discriminator_target = tensor.ivector()
 
-    d = discriminator(number_words = 30000, num_hidden = 1024, seq_length = maxlen, mb_size = 64, one_hot_input = one_hot_sampled, hidden_state_features_discriminator = hidden_state_features_discriminator)
-    one_hot_vector_flag = d.use_one_hot_input_flag;
+    d = discriminator(num_hidden = 2048, num_features = 1024 + 512, seq_length = 30, mb_size = 64, hidden_state_features = hidden_states_joined, target = discriminator_target)
 
-    #hidden_state_features_generator = d.hidden_state_features_generator
+    '''
+        -Get two update functions:
+          -Update generator wrt. disc.  
+          -Update discriminator wrt. generator outputs and real outputs.  
+
+        -Use the same inputs for both.  
+    '''
+
 
     import lasagne
 
-    all_grads = tensor.grad(-1.0 * d.loss, wrt=itemlist(tparams))
-    for j in range(0, len(all_grads)):
-         all_grads[j] = tensor.switch(tensor.isnan(all_grads[j]), tensor.zeros_like(all_grads[j]), all_grads[j])
+    #generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
 
-    scaled_grads = lasagne.updates.total_norm_constraint(all_grads, 5.0)
-    generator_gan_updates = lasagne.updates.adam(scaled_grads, tparams.values(), learning_rate = 0.0001)
+    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001)
 
-    inps_desc = [x,x_mask, bern_dist, uniform_sampling, one_hot_vector_flag, d.indices, d.target]
-    #train_generator_against_discriminator = theano.function(inputs = inps_desc,
-    #                                                        outputs = {'loss' : -1.0 * d.loss},
-    #                                                        updates = generator_gan_updates,
-    #                                                        on_unused_input='ignore')
-
-
-    #query_features = theano.function(inputs = inps_desc, outputs = {'gru_features' : gru_features}, on_unused_input = 'ignore')
-
-    last_d_update_type = "real"
-    do_gan_updates_on_gen = False
+    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = discriminator_gan_updates)
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -251,8 +251,8 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x_temp.shape)
             uniform_sampling = numpy.random.uniform(size = x_temp.flatten().shape[0])
 
-            q_real = x_temp.T.astype('int32')
-            q_real_mask = x_temp_mask
+            x_real = x_temp.T.astype('int32')
+            x_real_mask = x_temp_mask.T
 
             #if last_d_update_type == "fake":
 
@@ -276,16 +276,6 @@ def train(dim_word=100,  # word vector dimensionality
 
             #print "======================================================"
 
-            if do_gan_updates_on_gen:
-                print "updating generator against discriminator"
-                output_gen_desc = train_generator_against_discriminator(
-                                                x_temp.astype('int32'),
-                                                x_temp_mask.astype('float32'),
-                                                bern_dist.astype('float32'),
-                                                uniform_sampling.astype('float32'),
-                                                1,
-                                                numpy.asarray([[]]).astype('int32'),
-                                                [1] * 32)
 
 
 
@@ -383,37 +373,38 @@ def train(dim_word=100,  # word vector dimensionality
                 q_fake = q.astype('int32')
 
                 
-
-
             #Store q_fake and q_real
 
-     
-                #d.train_real_indices(q_real)
-                #d.train_fake_indices(q_fake)
-                #print "q real shape", q_real[16:,:].shape
-                #print "q fake shape", q_fake[:16,:].shape
+                x_mask = x_real_mask
+                genx = genx.T
+                genx_mask = genx_mask.T
+                x = x_real
 
-                print "x shape", q_real.shape
+                print "x shape", x.shape
                 print "x_mask shape", x_mask.shape
                 print "genx shape", genx.shape
                 print "genx_mask shape", genx_mask.shape
 
-                if x.shape[0] == 30 and genx.shape[0] == 30:
 
-                        h_real = get_hidden(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))['hidden']
-                        h_fake = get_hidden(genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))['hidden']
+                if x.shape[1] == 30 and genx.shape[1] == 30 and x_mask.shape[1] == 30 and genx_mask.shape[1] == 30:
 
-                        print "h_real", h_real.shape
-                        print "h_fake", h_fake.shape
+                        target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
-                        results_map = d.train_real_fake_indices(q_real, q_fake, h_real, h_fake)
+                        results_map = train_discriminator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
 
                         print "================================="
                         print "Discriminator Results"
                         print "Accuracy", results_map['accuracy']
+                        c = results_map['classification'].flatten()
+                        print "Mean scores (first should be higher than second"
+                        print c[:32].mean(), c[32:].mean()
+                        print "hidden states joined", results_map['hidden_states'].shape
                         print "================================="
                 else:
                         print "can't run on gen/disc due to invalid shape"
+
+
+
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:

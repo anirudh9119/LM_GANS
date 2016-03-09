@@ -65,8 +65,8 @@ def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
     maxlen_x = numpy.max(lengths_x) + 1
 
 
-    x = numpy.zeros((maxlen_x, n_samples)).astype('int64')
-    x_mask = numpy.zeros((maxlen_x, n_samples)).astype('float32')
+    x = numpy.zeros((maxlen, n_samples)).astype('int64')
+    x_mask = numpy.zeros((maxlen, n_samples)).astype('float32')
     for idx, s_x in enumerate(seqs_x):
         x[:lengths_x[idx], idx] = s_x
         x_mask[:lengths_x[idx]+1, idx] = 1.
