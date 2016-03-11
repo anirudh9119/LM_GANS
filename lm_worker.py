@@ -112,7 +112,6 @@ def train(dim_word=100,  # word vector dimensionality
         uniform_sampling,\
         one_hot_sampled, hidden_states, emb_obs = build_GAN_model(tparams, model_options)
 
-    '''
     trng_sampled,\
         use_noise_sampled,\
         x_sampled,\
@@ -131,7 +130,6 @@ def train(dim_word=100,  # word vector dimensionality
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 0)
     hidden_states_joined = tensor.concatenate([hidden_states_joined, emb_joined], axis = 2)
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
-    '''
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
 
@@ -193,7 +191,6 @@ def train(dim_word=100,  # word vector dimensionality
     estop = False
     bad_counter = 0
 
-    '''
     discriminator_target = tensor.ivector()
 
     d = discriminator(num_hidden = 2048,
@@ -202,11 +199,12 @@ def train(dim_word=100,  # word vector dimensionality
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
 
+    '''
         - Get two update functions:
         - Update generator wrt. disc.
         - Update discriminator wrt. generator outputs and real outputs.
         - Use the same inputs for both.
-
+    '''
 
     #generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss,
     #                                             tparams.values(),
@@ -221,7 +219,6 @@ def train(dim_word=100,  # word vector dimensionality
                                                      'classification' : d.classification,
                                                      'hidden_states' : hidden_states_joined},
                                           updates = discriminator_gan_updates)
-    '''
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -316,7 +313,6 @@ def train(dim_word=100,  # word vector dimensionality
                     continue
                 genx = genx.T
                 genx_mask = genx_mask.T
-                '''
                 print "x shape", x.shape
                 print "x_mask shape", x_mask.shape
                 print "genx shape", genx.shape
@@ -342,7 +338,6 @@ def train(dim_word=100,  # word vector dimensionality
                         print "================================="
                 else:
                         print "can't run on gen/disc due to invalid shape"
-                '''
 
 
 
