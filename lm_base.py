@@ -177,6 +177,7 @@ def build_sampler(tparams, options, trng):
     logit = tensor.tanh(logit_lstm+logit_prev)
     logit = get_layer('ff')[1](tparams, logit, options,
                                prefix='ff_logit', activ='linear')
+
     next_probs = tensor.nnet.softmax(logit)
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 

@@ -30,7 +30,10 @@ from ConvolutionalLayer import ConvPoolLayer
 
 class discriminator:
 
-    def __init__(self, number_words, num_hidden, seq_length, mb_size, one_hot_input, hidden_state_features_discriminator):
+    def __init__(self, number_words, num_hidden,
+                 seq_length, mb_size, one_hot_input,
+                 hidden_state_features_discriminator):
+
         self.mb_size = mb_size
         self.seq_length = seq_length
 
@@ -38,8 +41,8 @@ class discriminator:
 
         #sequence x minibatch x index
         #one_hot_input = T.ftensor3()
-        #Make one-hot-input false when training discriminator.  
-        #use_one_hot = training generator. 
+        #Make one-hot-input false when training discriminator.
+        #use_one_hot = training generator.
 
         #when training generator, use hidden state features
 
@@ -52,7 +55,9 @@ class discriminator:
         self.use_one_hot_input_flag = use_one_hot_input_flag
         self.one_hot_input = one_hot_input
 
-        hidden_state_features = ifelse(self.use_one_hot_input_flag, self.hidden_state_features_generator, hidden_state_features_discriminator)
+        hidden_state_features = ifelse(self.use_one_hot_input_flag,
+                                       self.hidden_state_features_generator,
+                                       hidden_state_features_discriminator)
 
         '''
         flag for input: one-hot or index.
@@ -106,14 +111,21 @@ class discriminator:
         gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden + num_features))
 
 
-        gru_1_out = gru_layer(gru_params_1,features.transpose(1,0,2),None, prefix = 'gru1')[0]
-        gru_2_out = gru_layer(gru_params_2,T.concatenate([gru_1_out, features.transpose(1,0,2)], axis = 2),None, prefix = 'gru2', backwards = True)[0]
-        gru_3_out = gru_layer(gru_params_3,T.concatenate([gru_2_out, features.transpose(1,0,2)], axis = 2), None, prefix = 'gru3')[0].transpose(1,0,2)
+        gru_1_out = gru_layer(gru_params_1,
+                              features.transpose(1,0,2),
+                              None, prefix = 'gru1')[0]
+
+        gru_2_out = gru_layer(gru_params_2,
+                              T.concatenate([gru_1_out, features.transpose(1,0,2)], axis = 2),
+                              None, prefix = 'gru2', backwards = True)[0]
+
+        gru_3_out = gru_layer(gru_params_3,
+                              T.concatenate([gru_2_out, features.transpose(1,0,2)], axis = 2),
+                              None, prefix = 'gru3')[0].transpose(1,0,2)
 
         final_out = T.mean(gru_3_out, axis = 1)
-
-
-        h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden,
+                             nonlinearity=lasagne.nonlinearities.rectify)
 
         h_out_2 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
 
@@ -123,7 +135,8 @@ class discriminator:
         raw_y = h_out_2_value
         classification = T.nnet.sigmoid(raw_y)
 
-        self.loss = T.mean(-1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten())))))
+        self.loss = T.mean(-1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten()))
+                                                 + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten())))))
 
         self.params = [word_embeddings]
         self.params += lasagne.layers.get_all_params(h_out_2,trainable=True)

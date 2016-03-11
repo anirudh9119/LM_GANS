@@ -241,6 +241,8 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
+         #   x=x.T
+         #   x_mask=x_mask.T
 
             ud_start = time.time()
 
@@ -248,8 +250,6 @@ def train(dim_word=100,  # word vector dimensionality
             cost = f_grad_shared(x.astype('int32'), x_mask.astype('float32'),
                                  bern_dist.astype('float32'), uniform_sampling.astype('float32'))
 
-            x=x.T
-            x_mask=x_mask.T
             # do the update on parameters
             f_update(lrate)
 
@@ -305,6 +305,8 @@ def train(dim_word=100,  # word vector dimensionality
 
                     if count_gen >= 32:
                         break
+
+
 
                 # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
