@@ -7,7 +7,7 @@ class TextIterator:
                  source_dict,
                  batch_size=128,
                  maxlen=100,
-                 minlen=10,
+                 minlen=0,
                  n_words_source=-1):
         if source.endswith('.gz'):
             self.source = gzip.open(source, 'r')

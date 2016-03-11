@@ -83,7 +83,8 @@ def train(dim_word=100,  # word vector dimensionality
                          dictionary,
                          n_words_source=n_words,
                          batch_size=batch_size,
-                         maxlen=maxlen)
+                         maxlen=maxlen,
+                         minlen=10)
     valid = TextIterator(valid_dataset,
                          dictionary,
                          n_words_source=n_words,
