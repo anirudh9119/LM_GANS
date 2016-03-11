@@ -204,7 +204,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
 
-    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001)
+    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001, beta1 = 0.5)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = discriminator_gan_updates)
 
@@ -229,8 +229,8 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
-            x=x.T
-            x_mask=x_mask.T
+            #x=x.T
+            #x_mask=x_mask.T
 
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
@@ -238,6 +238,9 @@ def train(dim_word=100,  # word vector dimensionality
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'), x_mask.astype('float32'),
                                  bern_dist.astype('float32'), uniform_sampling.astype('float32'))
+
+            #x=x.T
+            #x_mask=x_mask.T
 
             # do the update on parameters
             f_update(lrate)

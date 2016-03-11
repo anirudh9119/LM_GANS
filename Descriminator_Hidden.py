@@ -47,25 +47,26 @@ class discriminator:
         features_seq_first = hidden_state_features.transpose(1,0,2)
         #from example,seq,feature ==> seq,example,feature
 
+        features = features_seq_first
+
         #features: example x sequence_position x feature
 
-        #gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_features))
-        #gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden + num_features))
-        #gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden + num_features))
+        gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_features))
+        gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden + num_features))
+        gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden + num_features))
 
-        #gru_1_out = gru_layer(gru_params_1,features,None, prefix = 'gru1')[0]
-        #gru_2_out = gru_layer(gru_params_2,T.concatenate([gru_1_out, features], axis = 2),None, prefix = 'gru2', backwards = True)[0]
-        #gru_3_out = gru_layer(gru_params_3,T.concatenate([gru_2_out, features], axis = 2), None, prefix = 'gru3')[0]
+        gru_1_out = T.maximum(0.0, gru_layer(gru_params_1,features,None, prefix = 'gru1')[0])
+        gru_2_out = T.maximum(0.0, gru_layer(gru_params_2,T.concatenate([gru_1_out, features], axis = 2),None, prefix = 'gru2', backwards = True)[0])
+        gru_3_out = T.maximum(0.0, gru_layer(gru_params_3,T.concatenate([gru_2_out, features], axis = 2), None, prefix = 'gru3')[0])
 
-        #final_out = T.mean(gru_3_out, axis = 0)
+        final_out = T.mean(gru_3_out, axis = 0)
 
-        h_out_1 = DenseLayer((mb_size, num_features * seq_length), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
-
+        h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
 
-        h_out_1_value = h_out_1.get_output_for(hidden_state_features.flatten(2))
+        h_out_1_value = h_out_1.get_output_for(final_out)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
         h_out_3_value = h_out_3.get_output_for(h_out_2_value)
         h_out_4_value = h_out_4.get_output_for(h_out_3_value)
@@ -77,15 +78,15 @@ class discriminator:
         self.classification = classification
 
         self.params = []
+        self.params += lasagne.layers.get_all_params(h_out_4,trainable=True)
+        self.params += lasagne.layers.get_all_params(h_out_3,trainable=True)
         self.params += lasagne.layers.get_all_params(h_out_2,trainable=True)
         self.params += lasagne.layers.get_all_params(h_out_1,trainable=True)
 
-        #self.params += gru_params_1.values()
-        #self.params += gru_params_2.values()
-        #self.params += gru_params_3.values()
+        self.params += gru_params_1.values()
+        self.params += gru_params_2.values()
+        self.params += gru_params_3.values()
 
-        #self.params += c1.getParams().values()
-        #self.params += c2.getParams().values()
 
         #all_grads = T.grad(self.loss, self.params)
 
