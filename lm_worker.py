@@ -114,10 +114,10 @@ def train(dim_word=100,  # word vector dimensionality
 
     trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
 
-    emb_joined = tensor.concatenate([emb_obs, emb_sampled], axis = 0)
+    emb_joined = tensor.concatenate([emb_obs, emb_sampled], axis = 1)
 
     #hidden states are minibatch x sequence x feature
-    hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 0)
+    hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
 
     hidden_states_joined = tensor.concatenate([hidden_states_joined, emb_joined], axis = 2)
 
@@ -204,7 +204,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
 
-    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001, beta1 = 0.5)
+    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = discriminator_gan_updates)
 
@@ -234,6 +234,8 @@ def train(dim_word=100,  # word vector dimensionality
 
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
+
+            print "x shape before going into grad", x.shape
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'), x_mask.astype('float32'),
@@ -307,8 +309,8 @@ def train(dim_word=100,  # word vector dimensionality
                 if genx is None:
                     print 'Minibatch with zero sample under length ', maxlen
                     continue
-                genx = genx.T
-                genx_mask = genx_mask.T
+                #genx = genx.T
+                #genx_mask = genx_mask.T
 
                 print "x shape", x.shape
                 print "x_mask shape", x_mask.shape

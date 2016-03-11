@@ -44,7 +44,7 @@ class discriminator:
 
         #when training generator, use hidden state features
 
-        features_seq_first = hidden_state_features.transpose(1,0,2)
+        features_seq_first = hidden_state_features#.transpose(1,0,2)
         #from example,seq,feature ==> seq,example,feature
 
         features = features_seq_first
