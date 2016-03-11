@@ -18,7 +18,7 @@ class TextIterator:
 
         self.batch_size = batch_size
         self.maxlen = maxlen
-        self.minlen = 10
+        self.minlen = minlen
         self.n_words_source = n_words_source
 
         self.end_of_data = False
