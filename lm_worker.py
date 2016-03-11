@@ -34,6 +34,7 @@ from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_
 
 from lm_discriminator import  build_GAN_model
 
+use_gan_objective = True
 
 profile = False
 
@@ -188,6 +189,8 @@ def train(dim_word=100,  # word vector dimensionality
 
     d = discriminator(num_hidden = 2048, num_features = 1024 + 512, seq_length = 30, mb_size = 64, hidden_state_features = hidden_states_joined, target = discriminator_target)
 
+    last_acc = 0.0
+
     '''
         -Get two update functions:
           -Update generator wrt. disc.
@@ -199,11 +202,13 @@ def train(dim_word=100,  # word vector dimensionality
 
     import lasagne
 
-    #generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
+    generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
 
     discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = discriminator_gan_updates)
+
+    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = generator_gan_updates)
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -308,25 +313,29 @@ def train(dim_word=100,  # word vector dimensionality
                 print "genx_mask shape", genx_mask.shape
 
 
-                if x.shape[1] == 30 and genx.shape[1] == 30 and x_mask.shape[1] == 30 and genx_mask.shape[1] == 30:
+                if use_gan_objective:
+                    target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
-                        target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
-
+                    t0 = time.time()
+                    if last_acc > 0.8:
+                        print "Training generator"
+                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
+                    else:
+                        print "Training discriminator"
                         results_map = train_discriminator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
 
-                        print "================================="
-                        print "Discriminator Results"
-                        print "Accuracy", results_map['accuracy']
-                        c = results_map['classification'].flatten()
-                        print "Mean scores (first should be higher than second"
-                        print c[:32].mean(), c[32:].mean()
-                        print "hidden states joined", results_map['hidden_states'].shape
-                        print "================================="
-                else:
-                        print "can't run on gen/disc due to invalid shape"
+                    print "time to do single gen/disc update", time.time() - t0
 
+                    print "================================="
+                    print "Discriminator Results"
+                    print "Accuracy", results_map['accuracy']
+                    c = results_map['classification'].flatten()
+                    print "Mean scores (first should be higher than second"
+                    print c[:32].mean(), c[32:].mean()
+                    print "hidden states joined", results_map['hidden_states'].shape
+                    print "================================="
 
-
+                    last_acc = results_map['accuracy']
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
