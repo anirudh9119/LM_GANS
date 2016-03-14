@@ -14,6 +14,7 @@ grab the right word embeddings, and return them
 '''
 import theano
 import theano.tensor as tensor
+import lasagne
 
 import cPickle as pkl
 import ipdb
@@ -79,7 +80,7 @@ def train(dim_word=100,  # word vector dimensionality
         worddicts_r[vv] = kk
 
     #worddicts: word -> index
-    #worddicts_r : index -> word.  
+    #worddicts_r : index -> word.
 
     # reload options
     if reload_ and os.path.exists(saveto):
@@ -119,7 +120,13 @@ def train(dim_word=100,  # word vector dimensionality
         uniform_sampling,\
         one_hot_sampled, hidden_states, emb_obs = build_GAN_model(tparams, model_options)
 
-    trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+    trng_sampled,\
+    use_noise_sampled,\
+    x_sampled, x_mask_sampled,\
+    opt_ret_sampled, cost_sampled,\
+    f_get_sampled, bern_dist_sampled,\
+    uniform_sampling_sampled, one_hot_sampled_sampled,\
+    hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
 
     emb_joined = 0.0 * tensor.concatenate([emb_obs, emb_sampled], axis = 1)
 
@@ -194,7 +201,11 @@ def train(dim_word=100,  # word vector dimensionality
 
     discriminator_target = tensor.ivector()
 
-    d = discriminator(num_hidden = 2048, num_features = 1024 + 512, seq_length = 30, mb_size = 64, hidden_state_features = hidden_states_joined, target = discriminator_target)
+    d = discriminator(num_hidden = 2048,
+                      num_features = 1024 + 512,
+                      seq_length = 30, mb_size = 64,
+                      hidden_state_features = hidden_states_joined,
+                      target = discriminator_target)
 
     last_acc = 0.0
 
@@ -207,18 +218,27 @@ def train(dim_word=100,  # word vector dimensionality
     '''
 
 
-    import lasagne
 
-    #target = 1 corresponds to teacher forcing, target = 0 corresponds to sampled sentences.  
+    #target = 1 corresponds to teacher forcing, target = 0 corresponds to sampled sentences.
+
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
+    generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
+                                                 tparams.values(), learning_rate = 0.0001,
+                                                 beta1 = 0.5)
 
-    generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'), tparams.values(), learning_rate = 0.0001, beta1 = 0.5)
+    discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
+                                                     d.params, learning_rate = 0.0001,
+                                                     beta1 = 0.5)
 
-    discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss), d.params, learning_rate = 0.0001, beta1 = 0.5)
+    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
+                                          outputs = {'accuracy' : d.accuracy, 'classification' : d.classification},
+                                          updates = discriminator_gan_updates)
 
-    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification}, updates = discriminator_gan_updates)
-
-    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))}, updates = generator_gan_updates)
+    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
+                                      outputs = {'accuracy' : d.accuracy,
+                                                 'classification' : d.classification,
+                                                 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))},
+                                      updates = generator_gan_updates)
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -239,8 +259,6 @@ def train(dim_word=100,  # word vector dimensionality
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
-            #x=x.T
-            #x_mask=x_mask.T
 
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
@@ -248,11 +266,11 @@ def train(dim_word=100,  # word vector dimensionality
             print "x shape before going into grad", x.shape
 
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x.astype('int32'), x_mask.astype('float32'),
-                                 bern_dist.astype('float32'), uniform_sampling.astype('float32'))
+            cost = f_grad_shared(x.astype('int32'),
+                                 x_mask.astype('float32'),
+                                 bern_dist.astype('float32'),
+                                 uniform_sampling.astype('float32'))
 
-            #x=x.T
-            #x_mask=x_mask.T
 
             # do the update on parameters
             f_update(lrate)
@@ -284,15 +302,12 @@ def train(dim_word=100,  # word vector dimensionality
             if numpy.mod(uidx, sampleFreq) == 0:
 
                 t0 = time.time()
-                # FIXME: random selection?
                 gensample = [];
                 count_gen = 0;
                 while 1:
-                #for jj in xrange(32):
                     sample, score, next_state_sampled = gen_sample(tparams, f_next,
                                                model_options, trng=trng,
                                                maxlen=30, argmax=False)
-
 
 
                     if len(sample) >=10  and len(sample) < maxlen:
@@ -337,14 +352,33 @@ def train(dim_word=100,  # word vector dimensionality
                     print "last acc", last_acc
                     if train_generator_flag and last_acc > 0.9:
                         print "Training generator"
-                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
+                        results_map = train_generator(x, x_mask,
+                                                      bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'),
+                                                      genx, genx_mask,
+                                                      bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'), target)
+
                     elif train_generator_flag and last_acc > 0.8:
                         print "Training discriminator and generator"
-                        results_map = train_discriminator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
-                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
+                        results_map = train_discriminator(x, x_mask,
+                                                          bern_dist.astype('float32'),
+                                                          uniform_sampling.astype('float32'),
+                                                          genx, genx_mask, bern_dist.astype('float32'),
+                                                          uniform_sampling.astype('float32'), target)
+
+                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'),
+                                                      genx, genx_mask,
+                                                      bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'), target)
                     else:
                         print "Training discriminator"
-                        results_map = train_discriminator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
+                        results_map = train_discriminator(x, x_mask,
+                                                          bern_dist.astype('float32'),
+                                                          uniform_sampling.astype('float32'),
+                                                          genx, genx_mask, bern_dist.astype('float32'),
+                                                          uniform_sampling.astype('float32'), target)
 
                     print "time to do single gen/disc update", time.time() - t0
 
@@ -362,38 +396,31 @@ def train(dim_word=100,  # word vector dimensionality
 
                 print "Generating conditional sentences"
 
-
                 initial_text_lst = []
-
                 initial_text_lst.append(["he", "spent", "his"])
-
                 initial_text_lst.append("the school is in".split(" "))
-
                 initial_text_lst.append("jupiter is the largest planet . neptune and".split(" "))
-
                 initial_text_lst.append("apple won the lawsuit case against".split(" "))
-
                 initial_text_lst.append("the future of deep learning is".split(" "))
-
                 initial_text_lst.append("bush was elected president of".split(" "))
-
                 initial_text_lst.append("the president spent most of his ruling years on".split(" "))
-
                 initial_text_lst.append("the sanctions are".split(" "))
-
                 initial_text_lst.append("historically the city was".split(" "))
 
                 t0 = time.time()
                 for initial_text in initial_text_lst:
-
-                    conditional_sample = gen_sample_conditional(tparams, f_next,model_options,initial_text = initial_text, worddicts=worddicts,trng=trng,maxlen=30, argmax=True)
+                    conditional_sample = gen_sample_conditional(tparams,
+                                                                f_next, model_options,
+                                                                initial_text = initial_text,
+                                                                worddicts=worddicts,
+                                                                trng=trng,maxlen=30,
+                                                                argmax=True)
 
                     for element in conditional_sample:
                         if element in worddicts_r:
                             print worddicts_r[element],
                         else:
                             print "UNK",
-                    
                     print ""
                     print ""
 
