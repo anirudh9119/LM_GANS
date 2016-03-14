@@ -22,16 +22,17 @@ def main(job_id, params):
         validFreq=1000,
         dispFreq=10,
         saveFreq=1000,
-        sampleFreq=10,
+        sampleFreq=1,
         dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz',
         valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
         dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
-        use_dropout=params['use-dropout'][0])
+        use_dropout=params['use-dropout'][0],
+        train_generator_flag=params['train_generator_flag'][0])
     return validerr
 
 if __name__ == '__main__':
     main(0, {
-        'model': ['./models/model_lm.npz'],
+        'model': ['./models/model_lm_nogan.npz'],
         'dim_word': [512],
         'dim': [1024],
         'n-words': [30000],
@@ -39,5 +40,6 @@ if __name__ == '__main__':
         'decay-c': [0.],
         'use-dropout': [False],
         'learning-rate': [0.0001],
-        'reload': [True]})
+        'reload': [False],
+        'train_generator_flag' : [True]})
 

@@ -1,7 +1,7 @@
 import numpy
+import numpy as np
 
-
-def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=None, maxlen=30, argmax=False):
+def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=None, maxlen=30, argmax=True):
 
     initial_text_indices = []
 
@@ -10,6 +10,10 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
             nw = worddicts[word]
         else:
             nw = 0
+
+        if nw >= 30000:
+            nw = 1
+
         initial_text_indices.append(nw)
 
 
@@ -41,7 +45,6 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
         if nw == 0:
             break
 
-    return sample, sample_score, np.vstack(next_state_lst)
-
+    return sample
 
 

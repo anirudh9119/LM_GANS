@@ -118,11 +118,12 @@ def build_GAN_model(tparams, options):
     opt_ret['proj_h'] = proj_h
 
     # compute word probabilities
+    #TODO: turn lstm back on
     logit_lstm = get_layer('ff')[1](tparams, proj_h, options,
                                     prefix='ff_logit_lstm', activ='linear')
-    logit_prev = get_layer('ff')[1](tparams, emb, options,
+    logit_prev = 0.0 * get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
-    logit = tensor.tanh(logit_lstm+logit_prev)
+    logit = tensor.tanh(logit_lstm + 0.0 * logit_prev)
     logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit',
                                activ='linear')
     logit_shp = logit.shape

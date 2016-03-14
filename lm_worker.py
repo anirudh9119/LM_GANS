@@ -34,7 +34,10 @@ from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_
 
 from lm_discriminator import  build_GAN_model
 
+from conditional_sampler import gen_sample_conditional
+
 use_gan_objective = True
+train_generator_flag = True
 
 profile = False
 
@@ -60,7 +63,8 @@ def train(dim_word=100,  # word vector dimensionality
           valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
           dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
           use_dropout=False,
-          reload_=False):
+          reload_=False,
+          train_generator_flag=True):
 
     # Model options
     model_options = locals().copy()
@@ -73,6 +77,9 @@ def train(dim_word=100,  # word vector dimensionality
     worddicts_r = dict()
     for kk, vv in worddicts.iteritems():
         worddicts_r[vv] = kk
+
+    #worddicts: word -> index
+    #worddicts_r : index -> word.  
 
     # reload options
     if reload_ and os.path.exists(saveto):
@@ -114,7 +121,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     trng_sampled, use_noise_sampled, x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, f_get_sampled, bern_dist_sampled, uniform_sampling_sampled, one_hot_sampled_sampled, hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
 
-    emb_joined = tensor.concatenate([emb_obs, emb_sampled], axis = 1)
+    emb_joined = 0.0 * tensor.concatenate([emb_obs, emb_sampled], axis = 1)
 
     #hidden states are minibatch x sequence x feature
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
@@ -202,13 +209,16 @@ def train(dim_word=100,  # word vector dimensionality
 
     import lasagne
 
-    generator_gan_updates = lasagne.updates.adam(-1.0 * d.loss, tparams.values(), learning_rate = 0.0001)
+    #target = 1 corresponds to teacher forcing, target = 0 corresponds to sampled sentences.  
+    generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
 
-    discriminator_gan_updates = lasagne.updates.adam(d.loss, d.params, learning_rate = 0.0001)
+    generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'), tparams.values(), learning_rate = 0.0001, beta1 = 0.5)
 
-    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = discriminator_gan_updates)
+    discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss), d.params, learning_rate = 0.0001, beta1 = 0.5)
 
-    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'hidden_states' : hidden_states_joined}, updates = generator_gan_updates)
+    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification}, updates = discriminator_gan_updates)
+
+    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target], outputs = {'accuracy' : d.accuracy, 'classification' : d.classification, 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))}, updates = generator_gan_updates)
 
     print 'training gen against disc'
     for eidx in xrange(max_epochs):
@@ -272,6 +282,8 @@ def train(dim_word=100,  # word vector dimensionality
 
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
+
+                t0 = time.time()
                 # FIXME: random selection?
                 gensample = [];
                 count_gen = 0;
@@ -301,8 +313,9 @@ def train(dim_word=100,  # word vector dimensionality
                         break
 
 
-
+                print "Time to run sampling procedure for 32 examples", time.time() - t0
                 # See wtf is going on ?
+
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
                 genx, genx_mask = results[0], results[1]
 
@@ -317,13 +330,17 @@ def train(dim_word=100,  # word vector dimensionality
                 print "genx shape", genx.shape
                 print "genx_mask shape", genx_mask.shape
 
-
                 if use_gan_objective:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
                     t0 = time.time()
-                    if last_acc > 0.8:
+                    print "last acc", last_acc
+                    if train_generator_flag and last_acc > 0.9:
                         print "Training generator"
+                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
+                    elif train_generator_flag and last_acc > 0.8:
+                        print "Training discriminator and generator"
+                        results_map = train_discriminator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
                         results_map = train_generator(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), genx, genx_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'), target)
                     else:
                         print "Training discriminator"
@@ -337,10 +354,50 @@ def train(dim_word=100,  # word vector dimensionality
                     c = results_map['classification'].flatten()
                     print "Mean scores (first should be higher than second"
                     print c[:32].mean(), c[32:].mean()
-                    print "hidden states joined", results_map['hidden_states'].shape
+                    #print "hidden states joined", results_map['hidden_states'].shape
                     print "================================="
 
                     last_acc = results_map['accuracy']
+
+
+                print "Generating conditional sentences"
+
+
+                initial_text_lst = []
+
+                initial_text_lst.append(["he", "spent", "his"])
+
+                initial_text_lst.append("the school is in".split(" "))
+
+                initial_text_lst.append("jupiter is the largest planet . neptune and".split(" "))
+
+                initial_text_lst.append("apple won the lawsuit case against".split(" "))
+
+                initial_text_lst.append("the future of deep learning is".split(" "))
+
+                initial_text_lst.append("bush was elected president of".split(" "))
+
+                initial_text_lst.append("the president spent most of his ruling years on".split(" "))
+
+                initial_text_lst.append("the sanctions are".split(" "))
+
+                initial_text_lst.append("historically the city was".split(" "))
+
+                t0 = time.time()
+                for initial_text in initial_text_lst:
+
+                    conditional_sample = gen_sample_conditional(tparams, f_next,model_options,initial_text = initial_text, worddicts=worddicts,trng=trng,maxlen=30, argmax=True)
+
+                    for element in conditional_sample:
+                        if element in worddicts_r:
+                            print worddicts_r[element],
+                        else:
+                            print "UNK",
+                    
+                    print ""
+                    print ""
+
+                print "time to make conditional samples", time.time() - t0
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
