@@ -284,7 +284,6 @@ def train(worker, model_options, data_options,
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
-            #print "x shape before going into grad", x.shape
             log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'),
@@ -364,10 +363,10 @@ def train(worker, model_options, data_options,
                     print 'Minibatch with zero sample under length ', maxlen
                     continue
 
-                print "x shape", x.shape
-                print "x_mask shape", x_mask.shape
-                print "genx shape", genx.shape
-                print "genx_mask shape", genx_mask.shape
+                log.log({'x_shape': x.shape})
+                log.log({'x_mask_shape': x_mask.shape})
+                log.log({'genx_shape': genx.shape})
+                log.log({'gen_mask_shape': genx_mask.shape})
 
                 if use_gan_objective:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
