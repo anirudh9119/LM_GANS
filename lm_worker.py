@@ -24,6 +24,10 @@ import copy
 from toolz.dicttoolz import merge
 
 
+import sys
+reload(sys)
+sys.setdefaultencoding("utf-8")
+
 import os
 import time
 
@@ -271,7 +275,7 @@ def train(worker, model_options, data_options,
             log_entry = {'iteration': uidx}
 
             # pad batch and create mask
-            x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
+            x, x_mask = prepare_data(x, maxlen, n_words)
             if x is None:
                 LOGGER.info('Minibatch with zero sample under length')
                 uidx -= 1
@@ -356,7 +360,7 @@ def train(worker, model_options, data_options,
                 log.log({'Sampling_time': sampling_time})
 
                 # See wtf is going on ?
-                results = prepare_data(gensample, maxlen=30, n_words=30000)
+                results = prepare_data(gensample, maxlen, n_words)
                 genx, genx_mask = results[0], results[1]
 
                 if genx is None:

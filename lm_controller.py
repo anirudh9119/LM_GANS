@@ -7,6 +7,8 @@ import shutil
 import sys
 import logging
 from multiprocessing import Process
+reload(sys)
+sys.setdefaultencoding("utf-8")
 
 import numpy
 from mimir import ServerLogger
