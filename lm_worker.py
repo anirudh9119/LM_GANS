@@ -259,7 +259,7 @@ def train(worker, model_options, data_options,
                                                  'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))},
                                       updates = generator_gan_updates)
 
-    print 'training gen against disc'
+    LOGGER.info('Training generator against disc!')
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -268,10 +268,12 @@ def train(worker, model_options, data_options,
             uidx += 1
             use_noise.set_value(1.)
 
+            log_entry = {'iteration': uidx}
+
             # pad batch and create mask
             x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
             if x is None:
-                print 'Minibatch with zero sample under length ', maxlen
+                LOGGER.info('Minibatch with zero sample under length')
                 uidx -= 1
                 continue
 
@@ -282,8 +284,8 @@ def train(worker, model_options, data_options,
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
-            print "x shape before going into grad", x.shape
-
+            #print "x shape before going into grad", x.shape
+            log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'),
                                  x_mask.astype('float32'),
@@ -293,29 +295,29 @@ def train(worker, model_options, data_options,
 
             # do the update on parameters
             f_update(lrate)
-
             ud = time.time() - ud_start
+            log_entry['update_time'] = ud
+            log_entry['cost'] = float(cost)
+            log_entry['average_source_length'] = \
+                                         float(x_mask.sum(0).mean())
+
+            log.log(log_entry)
 
             # check for bad numbers
             if numpy.isnan(cost) or numpy.isinf(cost):
-                print 'NaN detected'
+                LOGGER.info("Nan Detected")
                 continue;
 
-            # verbose
-            if numpy.mod(uidx, dispFreq) == 0:
-                print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud
 
             # save the best model so far
             if numpy.mod(uidx, saveFreq) == 0:
-                print 'Saving...',
-
+                log.log({'Saving': uidx})
                 if best_p is not None:
                     params = best_p
                 else:
                     params = unzip(tparams)
                 numpy.savez(saveto, history_errs=history_errs, **params)
                 pkl.dump(model_options, open('%s.pkl' % saveto, 'wb'))
-                print 'Done'
 
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
@@ -333,31 +335,34 @@ def train(worker, model_options, data_options,
                         count_gen = count_gen + 1
                         gensample.append(sample)
                         print 'Sample ', count_gen, ': ',
+                        generated_sentence = ''
                         ss = sample
                         for vv in ss:
                             if vv == 0:
                                 break
                             if vv in worddicts_r:
                                 print worddicts_r[vv],
+                                generated_sentence =  generated_sentence + ' ' + worddicts_r[vv]
                             else:
                                 print 'UNK',
+                                generated_sentence =  generated_sentence + ' ' + 'UNK'
                         print
+                        log.log({'Sample ' + str(count_gen) + ' : ': generated_sentence})
 
                     if count_gen >= 32:
                         break
 
 
-                print "Time to run sampling procedure for 32 examples", time.time() - t0
-                # See wtf is going on ?
+                sampling_time = time.time() - t0
+                log.log({'Sampling_time': sampling_time})
 
+                # See wtf is going on ?
                 results = prepare_data(gensample, maxlen=30, n_words=30000)
                 genx, genx_mask = results[0], results[1]
 
                 if genx is None:
                     print 'Minibatch with zero sample under length ', maxlen
                     continue
-                #genx = genx.T
-                #genx_mask = genx_mask.T
 
                 print "x shape", x.shape
                 print "x_mask shape", x_mask.shape
@@ -368,9 +373,9 @@ def train(worker, model_options, data_options,
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
                     t0 = time.time()
-                    print "last acc", last_acc
+                    log.log({'last_accuracy': last_acc})
                     if train_generator_flag and last_acc > 0.9:
-                        print "Training generator"
+                        LOGGER.info("Training generator")
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
@@ -379,7 +384,7 @@ def train(worker, model_options, data_options,
                                                       uniform_sampling.astype('float32'), target)
 
                     elif train_generator_flag and last_acc > 0.8:
-                        print "Training discriminator and generator"
+                        LOGGER.info("Training discriminator and generator")
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
@@ -392,28 +397,36 @@ def train(worker, model_options, data_options,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
                     else:
-                        print "Training discriminator"
+                        LOGGER.info("Training discriminator")
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
                                                           genx, genx_mask, bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'), target)
 
-                    print "time to do single gen/disc update", time.time() - t0
+                    single_gen_disc_update =  time.time() - t0
+                    log.log({'single_gen_disc_update': single_gen_disc_update})
 
                     print "================================="
                     print "Discriminator Results"
                     print "Accuracy", results_map['accuracy']
+
+                    log.log({'Accuracy': results_map['accuracy']})
+
                     c = results_map['classification'].flatten()
                     print "Mean scores (first should be higher than second"
                     print c[:32].mean(), c[32:].mean()
+
+                    log.log({'Mean_pos_scores': c[:32].mean()})
+                    log.log({'Mean_neg_scores': c[32:].mean()})
+
                     #print "hidden states joined", results_map['hidden_states'].shape
                     print "================================="
 
                     last_acc = results_map['accuracy']
 
 
-                print "Generating conditional sentences"
+                LOGGER.info("Generating conditional sentences")
 
                 initial_text_lst = []
                 initial_text_lst.append(["he", "spent", "his"])
@@ -427,23 +440,34 @@ def train(worker, model_options, data_options,
                 initial_text_lst.append("historically the city was".split(" "))
 
                 t0 = time.time()
+                counter = 0
                 for initial_text in initial_text_lst:
+                    counter = counter + 1
                     conditional_sample = gen_sample_conditional(tparams,
                                                                 f_next, model_options,
                                                                 initial_text = initial_text,
                                                                 worddicts=worddicts,
-                                                                trng=trng,maxlen=30,
+                                                                trng=trng,
+                                                                maxlen=30,
                                                                 argmax=True)
 
+                    generated_sentence = ''
                     for element in conditional_sample:
                         if element in worddicts_r:
                             print worddicts_r[element],
+                            generated_sentence =  generated_sentence + ' ' + worddicts_r[element]
                         else:
+                            generated_sentence =  generated_sentence + ' ' + 'UNK'
                             print "UNK",
+
                     print ""
                     print ""
 
-                print "time to make conditional samples", time.time() - t0
+                    log.log({'Generated_Sample ' + str(count_gen) + ' : ': generated_sentence})
+
+
+                time_conditional_samples = time.time() - t0
+                log.log({'Time_conditional_samples': time_conditional_samples})
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
@@ -460,18 +484,18 @@ def train(worker, model_options, data_options,
                         numpy.array(history_errs)[:-patience].min():
                     bad_counter += 1
                     if bad_counter > patience:
-                        print 'Early Stop!'
+                        LOGGER.info("Early Stop!")
                         estop = True
                         break
 
                 if numpy.isnan(valid_err):
                     ipdb.set_trace()
 
-                print 'Valid ', valid_err
+                log.log({'Valid_Err': valid_err})
 
             # finish after this many updates
             if uidx >= finish_after:
-                print 'Finishing after %d iterations!' % uidx
+                log.log({'Finishing_after': uidx})
                 estop = True
                 break
 
@@ -487,7 +511,7 @@ def train(worker, model_options, data_options,
     valid_err = pred_probs(f_log_probs, prepare_data,
                            model_options, valid).mean()
 
-    print 'Valid ', valid_err
+    log.log({'Valid_Err': valid_err})
 
     params = copy.copy(best_p)
     numpy.savez(saveto, zipped_params=best_p,
