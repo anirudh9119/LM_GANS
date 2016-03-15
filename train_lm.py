@@ -22,8 +22,9 @@ def main(job_id, params):
         validFreq=1000,
         dispFreq=10,
         saveFreq=1000,
-        sampleFreq=1,
-        dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz',
+        sampleFreq=10,
+        dataset='wiki_small.txt.gz',
+        #dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz',
         valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
         dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
         use_dropout=params['use-dropout'][0],
@@ -40,6 +41,7 @@ if __name__ == '__main__':
         'decay-c': [0.],
         'use-dropout': [False],
         'learning-rate': [0.0001],
-        'reload': [False],
-        'train_generator_flag' : [True]})
+        'reload': [True],
+        'train_generator_flag' : [False]})
+
 

@@ -42,24 +42,34 @@ class discriminator:
         self.mb_size = mb_size
         self.seq_length = seq_length
 
+        h_initial_1 = DenseLayer((mb_size, num_features), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
+        h_initial_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
+        
         #when training generator, use hidden state features
 
-        features_seq_first = hidden_state_features#.transpose(1,0,2)
-        #from example,seq,feature ==> seq,example,feature
+        features_seq_first = hidden_state_features
+        
+        #features: sequence x example x features.  
 
-        features = features_seq_first
+        features_lst = []
 
-        #features: example x sequence_position x feature
+        for i in range(0, 30):
+            h_initial_1_value = h_initial_1.get_output_for(features_seq_first[i,:,:])
+            h_initial_2_value = h_initial_2.get_output_for(h_initial_1_value)
+            features_lst.append(T.reshape(h_initial_2_value, (1,mb_size,num_hidden)))
 
-        gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_features))
-        gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden + num_features))
-        gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden + num_features))
+        features = T.concatenate(features_lst, axis = 0)
 
-        gru_1_out = T.maximum(0.0, gru_layer(gru_params_1,features,None, prefix = 'gru1')[0])
-        gru_2_out = T.maximum(0.0, gru_layer(gru_params_2,T.concatenate([gru_1_out, features], axis = 2),None, prefix = 'gru2', backwards = True)[0])
-        gru_3_out = T.maximum(0.0, gru_layer(gru_params_3,T.concatenate([gru_2_out, features], axis = 2), None, prefix = 'gru3')[0])
+        gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_hidden))
+        gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden + num_hidden))
+        gru_params_3 = init_tparams(param_init_gru(None, {}, prefix = "gru3", dim = num_hidden, nin = num_hidden + num_hidden))
+
+        gru_1_out = gru_layer(gru_params_1,features,None, prefix = 'gru1')[0]
+        gru_2_out = gru_layer(gru_params_2,T.concatenate([gru_1_out, features], axis = 2),None, prefix = 'gru2', backwards = True)[0]
+        gru_3_out = gru_layer(gru_params_3,T.concatenate([gru_2_out, features], axis = 2), None, prefix = 'gru3')[0]
 
         final_out = T.mean(gru_3_out, axis = 0)
+
 
         h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
@@ -83,10 +93,12 @@ class discriminator:
         self.params += lasagne.layers.get_all_params(h_out_2,trainable=True)
         self.params += lasagne.layers.get_all_params(h_out_1,trainable=True)
 
+        self.params += lasagne.layers.get_all_params(h_initial_1,trainable=True)
+        self.params += lasagne.layers.get_all_params(h_initial_2,trainable=True)
+
         self.params += gru_params_1.values()
         self.params += gru_params_2.values()
         self.params += gru_params_3.values()
-
 
         #all_grads = T.grad(self.loss, self.params)
 

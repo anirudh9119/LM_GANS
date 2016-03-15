@@ -38,7 +38,6 @@ from lm_discriminator import  build_GAN_model
 from conditional_sampler import gen_sample_conditional
 
 use_gan_objective = True
-train_generator_flag = True
 
 profile = False
 
@@ -128,13 +127,8 @@ def train(dim_word=100,  # word vector dimensionality
     uniform_sampling_sampled, one_hot_sampled_sampled,\
     hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
 
-    emb_joined = 0.0 * tensor.concatenate([emb_obs, emb_sampled], axis = 1)
-
     #hidden states are minibatch x sequence x feature
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
-
-    hidden_states_joined = tensor.concatenate([hidden_states_joined, emb_joined], axis = 2)
-
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
@@ -202,7 +196,7 @@ def train(dim_word=100,  # word vector dimensionality
     discriminator_target = tensor.ivector()
 
     d = discriminator(num_hidden = 2048,
-                      num_features = 1024 + 512,
+                      num_features = 1024,
                       seq_length = 30, mb_size = 64,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
@@ -223,7 +217,7 @@ def train(dim_word=100,  # word vector dimensionality
 
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
-                                                 tparams.values(), learning_rate = 0.0001,
+                                                 tparams.values(), learning_rate = 0.001,
                                                  beta1 = 0.5)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
@@ -263,7 +257,6 @@ def train(dim_word=100,  # word vector dimensionality
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
-            print "x shape before going into grad", x.shape
 
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'),
@@ -310,19 +303,9 @@ def train(dim_word=100,  # word vector dimensionality
                                                maxlen=30, argmax=False)
 
 
-                    if len(sample) >=10  and len(sample) < maxlen:
+                    if True:#if len(sample) >=10  and len(sample) < maxlen:
                         count_gen = count_gen + 1
                         gensample.append(sample)
-                        print 'Sample ', count_gen, ': ',
-                        ss = sample
-                        for vv in ss:
-                            if vv == 0:
-                                break
-                            if vv in worddicts_r:
-                                print worddicts_r[vv],
-                            else:
-                                print 'UNK',
-                        print
 
                     if count_gen >= 32:
                         break
@@ -331,8 +314,9 @@ def train(dim_word=100,  # word vector dimensionality
                 print "Time to run sampling procedure for 32 examples", time.time() - t0
                 # See wtf is going on ?
 
-                results = prepare_data(gensample, maxlen=30, n_words=30000)
+                results = prepare_data(gensample, minlen=0, maxlen=30, n_words=30000)
                 genx, genx_mask = results[0], results[1]
+
 
                 if genx is None:
                     print 'Minibatch with zero sample under length ', maxlen
@@ -345,7 +329,8 @@ def train(dim_word=100,  # word vector dimensionality
                 print "genx shape", genx.shape
                 print "genx_mask shape", genx_mask.shape
 
-                if use_gan_objective:
+
+                if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
                     t0 = time.time()
@@ -388,6 +373,35 @@ def train(dim_word=100,  # word vector dimensionality
                     c = results_map['classification'].flatten()
                     print "Mean scores (first should be higher than second"
                     print c[:32].mean(), c[32:].mean()
+
+                    print "==============================================="
+                    print "Printing real sentences"
+                    for i in range(0, 32):
+                        print i,c[i],
+                        for j in range(0,30):
+                            word_num = x[j][i]
+                            if word_num == 0:
+                                break
+                            elif word_num in worddicts_r:
+                                print worddicts_r[word_num],
+                            else:
+                                print "UNK",
+                        print ""
+        
+                    print "==============================================="
+                    print "Printing fake sentences"
+                    for i in range(32, 64):
+                        print i,c[i],
+                        for j in range(0,30):
+                            word_num = genx[j][i - 32]
+                            if word_num == 0:
+                                break
+                            elif word_num in worddicts_r:
+                                print worddicts_r[word_num],
+                            else:
+                                print "UNK",
+                        print ""
+
                     #print "hidden states joined", results_map['hidden_states'].shape
                     print "================================="
 
@@ -405,6 +419,11 @@ def train(dim_word=100,  # word vector dimensionality
                 initial_text_lst.append("bush was elected president of".split(" "))
                 initial_text_lst.append("the president spent most of his ruling years on".split(" "))
                 initial_text_lst.append("the sanctions are".split(" "))
+
+                initial_text_lst.append("historically the city was".split(" "))
+                initial_text_lst.append("historically the city was".split(" "))
+                initial_text_lst.append("historically the city was".split(" "))
+                initial_text_lst.append("historically the city was".split(" "))
                 initial_text_lst.append("historically the city was".split(" "))
 
                 t0 = time.time()
@@ -419,9 +438,10 @@ def train(dim_word=100,  # word vector dimensionality
                     for element in conditional_sample:
                         if element in worddicts_r:
                             print worddicts_r[element],
+                        elif element == 0:
+                            break
                         else:
                             print "UNK",
-                    print ""
                     print ""
 
                 print "time to make conditional samples", time.time() - t0

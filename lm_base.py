@@ -51,9 +51,9 @@ def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
         new_seqs_x = []
         new_lengths_x = []
         for l_x, s_x in zip(lengths_x, seqs_x):
-            if l_x < maxlen:
-                new_seqs_x.append(s_x)
-                new_lengths_x.append(l_x)
+            if True:#l_x < maxlen:
+                new_seqs_x.append(s_x[:maxlen])
+                new_lengths_x.append(min(l_x,maxlen))
         lengths_x = new_lengths_x
         seqs_x = new_seqs_x
 
