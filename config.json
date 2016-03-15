@@ -1,0 +1,42 @@
+{
+  "training": {
+    "optimizer": "adadelta",
+    "decay_c": 0,
+    "patience": 100,
+    "finish_after": 10000000,
+    "lrate": 0.0001,
+    "max_epochs": 5000
+  },
+  "multi": {
+    "control_port": 5567,
+    "batch_port": 5568,
+    "log_port": 5569
+  },
+  "management": {
+    "sampleFreq": 1,
+    "validFreq": 1000,
+    "saveto": "./models/model_lm_nogan.npz",
+    "reload_": false,
+    "dispFreq": 1000,
+    "saveFreq": 1000
+  },
+  "data": {
+    "dataset": "/data/lisatmp4/anirudhg/wiki.tok.txt.gz",
+    "valid_dataset": "/data/lisatmp4/anirudhg/newstest2011.en.tok",
+    "dictionary": "/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl",
+    "batch_size": 32,
+    "n_words": 30000,
+    "valid_batch_size": 32,
+    "maxlen": 30,
+    "minlen": 10 
+  },
+  "model": {
+    "dim": 1024,
+    "dim_word": 512,
+    "use_dropout": false,
+    "dim_word": 620,
+    "encoder": "gru",
+    "n_words": 30000,
+    "train_generator_flag": true
+  }
+}

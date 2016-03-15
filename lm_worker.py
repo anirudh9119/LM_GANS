@@ -12,6 +12,7 @@ grab the right word embeddings, and return them
 
 
 '''
+import logging
 import theano
 import theano.tensor as tensor
 import lasagne
@@ -20,9 +21,14 @@ import cPickle as pkl
 import ipdb
 import numpy
 import copy
+from toolz.dicttoolz import merge
+
 
 import os
 import time
+
+from platoon.channel import Worker
+from mimir import RemoteLogger
 
 from six.moves import xrange
 from data_iterator import TextIterator
@@ -36,36 +42,49 @@ from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_
 from lm_discriminator import  build_GAN_model
 
 from conditional_sampler import gen_sample_conditional
+logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s:%(levelname)s:%(name)s:%(message)s')
+LOGGER = logging.getLogger(__name__)
 
 use_gan_objective = True
 train_generator_flag = True
 
 profile = False
 
-def train(dim_word=100,  # word vector dimensionality
-          dim=1000,  # the number of GRU units
-          encoder='gru',
-          patience=10,  # early stopping patience
-          max_epochs=5000,
-          finish_after=10000000,  # finish after this many updates
-          dispFreq=100,
-          decay_c=0.,  # L2 weight decay penalty
-          lrate=0.01,
-          n_words=100000,  # vocabulary size
-          maxlen=100,  # maximum length of the description
-          optimizer='rmsprop',
-          batch_size=16,
-          valid_batch_size=16,
-          saveto='model.npz',
-          validFreq=1000,
-          saveFreq=1000,  # save the parameters after every saveFreq updates
-          sampleFreq=100,  # generate some samples after every sampleFreq
-          dataset='/data/lisatmp4/anirudhg/wiki.tok.txt.gz',
-          valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
-          dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
-          use_dropout=False,
-          reload_=False,
-          train_generator_flag=True):
+def train(worker, model_options, data_options,
+          dim_word,  # word vector dimensionality
+          dim,  # the number of GRU units
+          encoder,
+          patience,  # early stopping patience
+          max_epochs,
+          finish_after,  # finish after this many updates
+          dispFreq,
+          decay_c,  # L2 weight decay penalty
+          lrate,
+          n_words,  # vocabulary size
+          maxlen,  # maximum length of the description
+          minlen,
+          optimizer,
+          batch_size,
+          valid_batch_size,
+          saveto,
+          validFreq,
+          saveFreq,  # save the parameters after every saveFreq updates
+          sampleFreq,  # generate some samples after every sampleFreq
+          dataset,
+          valid_dataset,
+          dictionary,
+          use_dropout,
+          reload_,
+          train_generator_flag,
+          batch_port,
+          log_port,
+          control_port):
+
+    LOGGER.info('Connecting to data socket ({}) and loading validation data'
+                    .format(batch_port))
+    worker.init_mb_sock(batch_port)
+    log = RemoteLogger(port=log_port)
 
     # Model options
     model_options = locals().copy()
@@ -87,7 +106,8 @@ def train(dim_word=100,  # word vector dimensionality
         with open('%s.pkl' % saveto, 'rb') as f:
             model_options = pkl.load(f)
 
-    print 'Loading data'
+    LOGGER.info('Loading data')
+
     train = TextIterator(dataset,
                          dictionary,
                          n_words_source=n_words,
@@ -99,7 +119,7 @@ def train(dim_word=100,  # word vector dimensionality
                          batch_size=valid_batch_size,
                          maxlen=maxlen)
 
-    print 'Building model'
+    LOGGER.info('Building model')
     params = init_params(model_options)
 
     # reload parameters
@@ -140,14 +160,14 @@ def train(dim_word=100,  # word vector dimensionality
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
 
 
-    print 'Buliding sampler'
+    LOGGER.info('Building sampler')
     f_next = build_sampler(tparams, model_options, trng)
 
 
     # before any regularizer
-    print 'Building f_log_probs...',
+    LOGGER.info('Building f_log_probs')
     f_log_probs = theano.function(inps, cost, profile=profile)
-    print 'Done'
+    LOGGER.info('Building f_log_probs Done')
 
 
     cost = cost.mean()
@@ -162,23 +182,22 @@ def train(dim_word=100,  # word vector dimensionality
         cost += weight_decay
 
     # after any regularizer - compile the computational graph for cost
-    print 'Building f_cost...',
+    LOGGER.info('Building f_cost')
     f_cost = theano.function(inps, cost, profile=profile)
-    print 'Done'
+    LOGGER.info('Done')
 
-    print 'Computing gradient...',
+    LOGGER.info('Computing gradient')
     grads = tensor.grad(cost, wrt=itemlist(tparams))
-    print 'Done'
+    LOGGER.info('Done')
 
     # compile the optimizer, the actual computational graph is compiled here
     lr = tensor.scalar(name='lr')
-    print 'Building optimizers...',
+    LOGGER.info('Building optimizers')
     f_grad_shared, f_update = getattr(optimizers, optimizer)(lr, tparams,
                                                              grads, inps, cost)
 
-    print 'Done'
+    LOGGER.info('Done')
 
-    print 'Optimization'
 
     history_errs = []
     # reload history
@@ -479,4 +498,11 @@ def train(dim_word=100,  # word vector dimensionality
 
 
 if __name__ == '__main__':
-    pass
+    LOGGER.info('Connecting to worker')
+    worker = Worker(control_port=5567)
+    LOGGER.info('Retrieving configuration')
+    config = worker.send_req('config')
+    train(worker, config['model'], config['data'],
+          **merge(config['training'], config['management'], config['multi'],config['model'], config['data']))
+
+
