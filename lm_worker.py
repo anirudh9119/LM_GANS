@@ -346,7 +346,7 @@ def train(worker, model_options, data_options,
                                 print 'UNK',
                                 generated_sentence =  generated_sentence + ' ' + 'UNK'
                         print
-                        log.log({'Sample ' + str(count_gen) + ' : ': generated_sentence})
+                        log.log({'Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
 
                     if count_gen >= 32:
                         break
@@ -462,7 +462,7 @@ def train(worker, model_options, data_options,
                     print ""
                     print ""
 
-                    log.log({'Generated_Sample ' + str(count_gen) + ' : ': generated_sentence})
+                    log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
 
 
                 time_conditional_samples = time.time() - t0
