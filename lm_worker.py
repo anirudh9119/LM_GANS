@@ -221,8 +221,8 @@ def train(dim_word=100,  # word vector dimensionality
                                                  beta1 = 0.5)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
-                                                     d.params, learning_rate = 0.0001,
-                                                     beta1 = 0.5)
+                                                     d.params, learning_rate = 0.001,
+                                                     beta1 = 0.9)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {'accuracy' : d.accuracy, 'classification' : d.classification},
