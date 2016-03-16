@@ -137,21 +137,18 @@ def train(worker, model_options, data_options,
         x, x_mask,\
         opt_ret,\
         cost,\
-        f_get,\
         bern_dist,\
         uniform_sampling,\
-        one_hot_sampled, hidden_states, emb_obs = build_GAN_model(tparams, model_options)
+        hidden_states, emb_obs = build_GAN_model(tparams, model_options)
 
-    trng_sampled,\
-    use_noise_sampled,\
-    x_sampled, x_mask_sampled,\
-    opt_ret_sampled, cost_sampled,\
-    f_get_sampled, bern_dist_sampled,\
-    uniform_sampling_sampled, one_hot_sampled_sampled,\
-    hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+    trng_sampled, use_noise_sampled,x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, bern_dist_sampled,uniform_sampling_sampled,hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+
 
     #hidden states are minibatch x sequence x feature
+    #TODO: only using hidden states real.  
+
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
+    #hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
@@ -237,9 +234,20 @@ def train(worker, model_options, data_options,
 
     #target = 1 corresponds to teacher forcing, target = 0 corresponds to sampled sentences.
 
+    print "tparam keys"
+    print tparams.keys()
+
+    tparams_gen = []
+
+    #['Wemb', 'encoder_W', 'encoder_U', 'encoder_b', 'encoder_Wx', 'encoder_Ux', 'encoder_bx', 'ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']
+
+    for key in tparams.keys():
+        if not (key in ['ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']):
+            tparams_gen.append(tparams[key])
+
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
-                                                 tparams.values(), learning_rate = 0.001,
+                                                 tparams_gen, learning_rate = 0.001,
                                                  beta1 = 0.5)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
