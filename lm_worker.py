@@ -141,11 +141,16 @@ def train(worker, model_options, data_options,
         uniform_sampling,\
         hidden_states, emb_obs = build_GAN_model(tparams, model_options)
 
-    trng_sampled, use_noise_sampled,x_sampled, x_mask_sampled, opt_ret_sampled, cost_sampled, bern_dist_sampled,uniform_sampling_sampled,hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+    trng_sampled, \
+        use_noise_sampled, \
+        x_sampled, x_mask_sampled, \
+        opt_ret_sampled, cost_sampled,\
+        bern_dist_sampled, uniform_sampling_sampled, \
+        hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
 
 
-    #hidden states are minibatch x sequence x feature
-    #TODO: only using hidden states real.  
+    # hidden states are minibatch x sequence x feature
+    #TODO: only using hidden states real.
 
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
     #hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
@@ -239,7 +244,8 @@ def train(worker, model_options, data_options,
 
     tparams_gen = []
 
-    #['Wemb', 'encoder_W', 'encoder_U', 'encoder_b', 'encoder_Wx', 'encoder_Ux', 'encoder_bx', 'ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']
+    #['Wemb', 'encoder_W', 'encoder_U', 'encoder_b', 'encoder_Wx', 'encoder_Ux', 'encoder_bx',
+    # 'ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']
 
     for key in tparams.keys():
         if not (key in ['ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']):
@@ -357,10 +363,10 @@ def train(worker, model_options, data_options,
                     log.log({'Minibatch with zero sample under length ' : maxlen})
                     continue
 
-                log.log({'x_shape': x.shape})
-                log.log({'x_mask_shape': x_mask.shape})
-                log.log({'genx_shape': genx.shape})
-                log.log({'gen_mask_shape': genx_mask.shape})
+                log.log({'x_shape': x.shape,
+                         'x_mask_shape': x_mask.shape,
+                         'genx_shape': genx.shape,
+                         'gen_mask_shape': genx_mask.shape})
 
 
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
@@ -399,15 +405,13 @@ def train(worker, model_options, data_options,
                                                           uniform_sampling.astype('float32'), target)
 
                     single_gen_disc_update =  time.time() - t0
-                    log.log({'single_gen_disc_update': single_gen_disc_update})
-
-                    log.log({'Discriminator Accuracy': results_map['accuracy']})
-
                     c = results_map['classification'].flatten()
-                    log.log({"Mean scores (first should be higher than second)" : (c[:32].mean(), c[32:].mean())})
+                    log.log({'single_gen_disc_update': single_gen_disc_update,
+                             'Discriminator_Accuracy': results_map['accuracy'],
+                             'Mean scores (first should be higher than second)' : (c[:32].mean(), c[32:].mean())})
 
                     for i in range(0, 32):
-                        sentence_print = str(i) + " " + str(c[i]) + " "
+                        sentence_print = ""
                         for j in range(0,30):
                             word_num = x[j][i]
                             if word_num == 0:
@@ -416,10 +420,12 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        log.log({"Real sentence" : sentence_print})
-        
+                        log.log({"Real_Sentence" : sentence_print,
+                                 "Real_Sentence_Index" : str(i),
+                                 "Real_Sentence_Accuracy" :str(c[i])})
+
                     for i in range(32, 64):
-                        sentence_print = str(i) + " " + str(c[i]) + " "
+                        sentence_print = ""
                         for j in range(0,30):
                             word_num = genx[j][i - 32]
                             if word_num == 0:
@@ -428,10 +434,12 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        log.log({"Fake sentence" : sentence_print})
+                        log.log({"Fake_Sentence" : sentence_print,
+                                 "Fake_Sentence_Index" : str(i),
+                                 "Fake_Sentence" : str(c[i])})
 
-                    log.log({'Mean_pos_scores': c[:32].mean()})
-                    log.log({'Mean_neg_scores': c[32:].mean()})
+                    log.log({'Mean_pos_scores': c[:32].mean(),
+                             'Mean_neg_scores': c[32:].mean()})
 
                     #print "hidden states joined", results_map['hidden_states'].shape
 
@@ -479,7 +487,6 @@ def train(worker, model_options, data_options,
 
                     log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
                     generated_sentence = generated_sentence.decode('utf-8')
-                    log.log({'Generated_Sample ' + str(count_gen) : generated_sentence})
 
 
                 time_conditional_samples = time.time() - t0
