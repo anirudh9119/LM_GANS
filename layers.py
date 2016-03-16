@@ -30,7 +30,8 @@ def linear(x):
     return x
 
 
-
+def relu(x):
+    return T.maximum(0.0, x)
 
 # feedforward layer: affine transformation + point-wise nonlinearity
 def param_init_fflayer(options,

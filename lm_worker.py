@@ -51,7 +51,6 @@ logging.basicConfig(level=logging.INFO,
 LOGGER = logging.getLogger(__name__)
 
 use_gan_objective = True
-
 profile = False
 
 def train(worker, model_options, data_options,
@@ -308,7 +307,7 @@ def train(worker, model_options, data_options,
 
 
             # save the best model so far
-            if numpy.mod(uidx, saveFreq) == 0:
+            if False and numpy.mod(uidx, saveFreq) == 0:
                 log.log({'Saving': uidx})
                 if best_p is not None:
                     params = best_p
@@ -347,7 +346,7 @@ def train(worker, model_options, data_options,
 
 
                 if genx is None:
-                    print 'Minibatch with zero sample under length ', maxlen
+                    log.log({'Minibatch with zero sample under length ' : maxlen})
                     continue
 
                 log.log({'x_shape': x.shape})
@@ -361,7 +360,7 @@ def train(worker, model_options, data_options,
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
-                    if train_generator_flag and last_acc > 0.9:
+                    if train_generator_flag and last_acc > 0.99:
                         LOGGER.info("Training generator")
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
@@ -394,49 +393,39 @@ def train(worker, model_options, data_options,
                     single_gen_disc_update =  time.time() - t0
                     log.log({'single_gen_disc_update': single_gen_disc_update})
 
-                    print "================================="
-                    print "Discriminator Results"
-                    print "Accuracy", results_map['accuracy']
-
-                    log.log({'Accuracy': results_map['accuracy']})
+                    log.log({'Discriminator Accuracy': results_map['accuracy']})
 
                     c = results_map['classification'].flatten()
-                    print "Mean scores (first should be higher than second"
-                    print c[:32].mean(), c[32:].mean()
+                    log.log({"Mean scores (first should be higher than second)" : (c[:32].mean(), c[32:].mean())})
 
-                    print "==============================================="
-                    print "Printing real sentences"
                     for i in range(0, 32):
-                        print i,c[i],
+                        sentence_print = str(i) + " " + str(c[i]) + " "
                         for j in range(0,30):
                             word_num = x[j][i]
                             if word_num == 0:
                                 break
                             elif word_num in worddicts_r:
-                                print worddicts_r[word_num],
+                                sentence_print += worddicts_r[word_num] + " "
                             else:
-                                print "UNK",
-                        print ""
+                                sentence_print += "UNK "
+                        log.log({"Real sentence" : sentence_print})
         
-                    print "==============================================="
-                    print "Printing fake sentences"
                     for i in range(32, 64):
-                        print i,c[i],
+                        sentence_print = str(i) + " " + str(c[i]) + " "
                         for j in range(0,30):
                             word_num = genx[j][i - 32]
                             if word_num == 0:
                                 break
                             elif word_num in worddicts_r:
-                                print worddicts_r[word_num],
+                                sentence_print += worddicts_r[word_num] + " "
                             else:
-                                print "UNK",
-                        print ""
+                                sentence_print += "UNK "
+                        log.log({"Fake sentence" : sentence_print})
 
                     log.log({'Mean_pos_scores': c[:32].mean()})
                     log.log({'Mean_neg_scores': c[32:].mean()})
 
                     #print "hidden states joined", results_map['hidden_states'].shape
-                    print "================================="
 
                     last_acc = results_map['accuracy']
 
@@ -474,13 +463,11 @@ def train(worker, model_options, data_options,
                     generated_sentence = ''
                     for element in conditional_sample:
                         if element in worddicts_r:
-                            print worddicts_r[element],
+                            generated_sentence += worddicts_r[element] + " "
                         elif element == 0:
                             break
                         else:
-                            generated_sentence =  generated_sentence + ' ' + 'UNK'
-                            print "UNK",
-
+                            generated_sentence += 'UNK '
 
                     log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
                     generated_sentence = generated_sentence.decode('utf-8')
@@ -520,7 +507,7 @@ def train(worker, model_options, data_options,
                 estop = True
                 break
 
-        print 'Seen %d samples' % n_samples
+        log.log({"Samples seen" : n_samples})
 
         if estop:
             break
