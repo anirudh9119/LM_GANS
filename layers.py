@@ -9,7 +9,7 @@ profile = settings.profile
 
 # layers: 'name': ('parameter initializer', 'feedforward')
 layers = {'ff': ('param_init_fflayer', 'fflayer'),
-          'gru': ('param_init_gru', 'gru_layer'),
+          'gru': ('param_init_gru', 'gru_layer')
          }
 
 

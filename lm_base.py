@@ -95,6 +95,8 @@ def init_params(options):
                                 nin=options['dim_word'],
                                 nout=options['n_words'])
 
+
+
     return params
 
 

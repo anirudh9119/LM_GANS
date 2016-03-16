@@ -12,6 +12,7 @@ grab the right word embeddings, and return them
 
 
 '''
+import logging
 import theano
 import theano.tensor as tensor
 import lasagne
@@ -20,9 +21,18 @@ import cPickle as pkl
 import ipdb
 import numpy
 import copy
+from toolz.dicttoolz import merge
+
+
+import sys
+reload(sys)
+sys.setdefaultencoding("utf-8")
 
 import os
 import time
+
+from platoon.channel import Worker
+from mimir import RemoteLogger
 
 from six.moves import xrange
 from data_iterator import TextIterator
@@ -36,35 +46,48 @@ from lm_base import (init_params, build_sampler,gen_sample, pred_probs, prepare_
 from lm_discriminator import  build_GAN_model
 
 from conditional_sampler import gen_sample_conditional
+logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s:%(levelname)s:%(name)s:%(message)s')
+LOGGER = logging.getLogger(__name__)
 
 use_gan_objective = True
 
 profile = False
 
-def train(dim_word=100,  # word vector dimensionality
-          dim=1000,  # the number of GRU units
-          encoder='gru',
-          patience=10,  # early stopping patience
-          max_epochs=5000,
-          finish_after=10000000,  # finish after this many updates
-          dispFreq=100,
-          decay_c=0.,  # L2 weight decay penalty
-          lrate=0.01,
-          n_words=100000,  # vocabulary size
-          maxlen=100,  # maximum length of the description
-          optimizer='rmsprop',
-          batch_size=16,
-          valid_batch_size=16,
-          saveto='model.npz',
-          validFreq=1000,
-          saveFreq=1000,  # save the parameters after every saveFreq updates
-          sampleFreq=100,  # generate some samples after every sampleFreq
-          dataset='/data/lisatmp4/anirudhg/wiki.tok.txt.gz',
-          valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
-          dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
-          use_dropout=False,
-          reload_=False,
-          train_generator_flag=True):
+def train(worker, model_options, data_options,
+          dim_word,  # word vector dimensionality
+          dim,  # the number of GRU units
+          encoder,
+          patience,  # early stopping patience
+          max_epochs,
+          finish_after,  # finish after this many updates
+          dispFreq,
+          decay_c,  # L2 weight decay penalty
+          lrate,
+          n_words,  # vocabulary size
+          maxlen,  # maximum length of the description
+          minlen,
+          optimizer,
+          batch_size,
+          valid_batch_size,
+          saveto,
+          validFreq,
+          saveFreq,  # save the parameters after every saveFreq updates
+          sampleFreq,  # generate some samples after every sampleFreq
+          dataset,
+          valid_dataset,
+          dictionary,
+          use_dropout,
+          reload_,
+          train_generator_flag,
+          batch_port,
+          log_port,
+          control_port):
+
+    LOGGER.info('Connecting to data socket ({}) and loading validation data'
+                    .format(batch_port))
+    worker.init_mb_sock(batch_port)
+    log = RemoteLogger(port=log_port)
 
     # Model options
     model_options = locals().copy()
@@ -86,7 +109,8 @@ def train(dim_word=100,  # word vector dimensionality
         with open('%s.pkl' % saveto, 'rb') as f:
             model_options = pkl.load(f)
 
-    print 'Loading data'
+    LOGGER.info('Loading data')
+
     train = TextIterator(dataset,
                          dictionary,
                          n_words_source=n_words,
@@ -98,7 +122,7 @@ def train(dim_word=100,  # word vector dimensionality
                          batch_size=valid_batch_size,
                          maxlen=maxlen)
 
-    print 'Building model'
+    LOGGER.info('Building model')
     params = init_params(model_options)
 
     # reload parameters
@@ -134,14 +158,14 @@ def train(dim_word=100,  # word vector dimensionality
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
 
 
-    print 'Buliding sampler'
+    LOGGER.info('Building sampler')
     f_next = build_sampler(tparams, model_options, trng)
 
 
     # before any regularizer
-    print 'Building f_log_probs...',
+    LOGGER.info('Building f_log_probs')
     f_log_probs = theano.function(inps, cost, profile=profile)
-    print 'Done'
+    LOGGER.info('Building f_log_probs Done')
 
 
     cost = cost.mean()
@@ -156,23 +180,22 @@ def train(dim_word=100,  # word vector dimensionality
         cost += weight_decay
 
     # after any regularizer - compile the computational graph for cost
-    print 'Building f_cost...',
+    LOGGER.info('Building f_cost')
     f_cost = theano.function(inps, cost, profile=profile)
-    print 'Done'
+    LOGGER.info('Done')
 
-    print 'Computing gradient...',
+    LOGGER.info('Computing gradient')
     grads = tensor.grad(cost, wrt=itemlist(tparams))
-    print 'Done'
+    LOGGER.info('Done')
 
     # compile the optimizer, the actual computational graph is compiled here
     lr = tensor.scalar(name='lr')
-    print 'Building optimizers...',
+    LOGGER.info('Building optimizers')
     f_grad_shared, f_update = getattr(optimizers, optimizer)(lr, tparams,
                                                              grads, inps, cost)
 
-    print 'Done'
+    LOGGER.info('Done')
 
-    print 'Optimization'
 
     history_errs = []
     # reload history
@@ -234,7 +257,7 @@ def train(dim_word=100,  # word vector dimensionality
                                                  'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))},
                                       updates = generator_gan_updates)
 
-    print 'training gen against disc'
+    LOGGER.info('Training generator against disc!')
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -243,10 +266,12 @@ def train(dim_word=100,  # word vector dimensionality
             uidx += 1
             use_noise.set_value(1.)
 
+            log_entry = {'iteration': uidx}
+
             # pad batch and create mask
-            x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
+            x, x_mask = prepare_data(x, maxlen, n_words)
             if x is None:
-                print 'Minibatch with zero sample under length ', maxlen
+                LOGGER.info('Minibatch with zero sample under length')
                 uidx -= 1
                 continue
 
@@ -258,6 +283,7 @@ def train(dim_word=100,  # word vector dimensionality
             ud_start = time.time()
 
 
+            log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
             cost = f_grad_shared(x.astype('int32'),
                                  x_mask.astype('float32'),
@@ -267,29 +293,29 @@ def train(dim_word=100,  # word vector dimensionality
 
             # do the update on parameters
             f_update(lrate)
-
             ud = time.time() - ud_start
+            log_entry['update_time'] = ud
+            log_entry['cost'] = float(cost)
+            log_entry['average_source_length'] = \
+                                         float(x_mask.sum(0).mean())
+
+            log.log(log_entry)
 
             # check for bad numbers
             if numpy.isnan(cost) or numpy.isinf(cost):
-                print 'NaN detected'
+                LOGGER.info("Nan Detected")
                 continue;
 
-            # verbose
-            if numpy.mod(uidx, dispFreq) == 0:
-                print 'Epoch ', eidx, 'Update ', uidx, 'Cost ', cost, 'UD ', ud
 
             # save the best model so far
             if numpy.mod(uidx, saveFreq) == 0:
-                print 'Saving...',
-
+                log.log({'Saving': uidx})
                 if best_p is not None:
                     params = best_p
                 else:
                     params = unzip(tparams)
                 numpy.savez(saveto, history_errs=history_errs, **params)
                 pkl.dump(model_options, open('%s.pkl' % saveto, 'wb'))
-                print 'Done'
 
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
@@ -311,32 +337,32 @@ def train(dim_word=100,  # word vector dimensionality
                         break
 
 
-                print "Time to run sampling procedure for 32 examples", time.time() - t0
-                # See wtf is going on ?
+                sampling_time = time.time() - t0
+                log.log({'Sampling_time': sampling_time})
 
                 results = prepare_data(gensample, minlen=0, maxlen=30, n_words=30000)
+                # See wtf is going on ?
+                results = prepare_data(gensample, maxlen, n_words)
                 genx, genx_mask = results[0], results[1]
 
 
                 if genx is None:
                     print 'Minibatch with zero sample under length ', maxlen
                     continue
-                #genx = genx.T
-                #genx_mask = genx_mask.T
 
-                print "x shape", x.shape
-                print "x_mask shape", x_mask.shape
-                print "genx shape", genx.shape
-                print "genx_mask shape", genx_mask.shape
+                log.log({'x_shape': x.shape})
+                log.log({'x_mask_shape': x_mask.shape})
+                log.log({'genx_shape': genx.shape})
+                log.log({'gen_mask_shape': genx_mask.shape})
 
 
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
                     t0 = time.time()
-                    print "last acc", last_acc
+                    log.log({'last_accuracy': last_acc})
                     if train_generator_flag and last_acc > 0.9:
-                        print "Training generator"
+                        LOGGER.info("Training generator")
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
@@ -345,7 +371,7 @@ def train(dim_word=100,  # word vector dimensionality
                                                       uniform_sampling.astype('float32'), target)
 
                     elif train_generator_flag and last_acc > 0.8:
-                        print "Training discriminator and generator"
+                        LOGGER.info("Training discriminator and generator")
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
@@ -358,18 +384,22 @@ def train(dim_word=100,  # word vector dimensionality
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
                     else:
-                        print "Training discriminator"
+                        LOGGER.info("Training discriminator")
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
                                                           genx, genx_mask, bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'), target)
 
-                    print "time to do single gen/disc update", time.time() - t0
+                    single_gen_disc_update =  time.time() - t0
+                    log.log({'single_gen_disc_update': single_gen_disc_update})
 
                     print "================================="
                     print "Discriminator Results"
                     print "Accuracy", results_map['accuracy']
+
+                    log.log({'Accuracy': results_map['accuracy']})
+
                     c = results_map['classification'].flatten()
                     print "Mean scores (first should be higher than second"
                     print c[:32].mean(), c[32:].mean()
@@ -402,13 +432,16 @@ def train(dim_word=100,  # word vector dimensionality
                                 print "UNK",
                         print ""
 
+                    log.log({'Mean_pos_scores': c[:32].mean()})
+                    log.log({'Mean_neg_scores': c[32:].mean()})
+
                     #print "hidden states joined", results_map['hidden_states'].shape
                     print "================================="
 
                     last_acc = results_map['accuracy']
 
 
-                print "Generating conditional sentences"
+                LOGGER.info("Generating conditional sentences")
 
                 initial_text_lst = []
                 initial_text_lst.append(["he", "spent", "his"])
@@ -427,24 +460,34 @@ def train(dim_word=100,  # word vector dimensionality
                 initial_text_lst.append("historically the city was".split(" "))
 
                 t0 = time.time()
+                counter = 0
                 for initial_text in initial_text_lst:
+                    counter = counter + 1
                     conditional_sample = gen_sample_conditional(tparams,
                                                                 f_next, model_options,
                                                                 initial_text = initial_text,
                                                                 worddicts=worddicts,
-                                                                trng=trng,maxlen=30,
+                                                                trng=trng,
+                                                                maxlen=30,
                                                                 argmax=True)
 
+                    generated_sentence = ''
                     for element in conditional_sample:
                         if element in worddicts_r:
                             print worddicts_r[element],
                         elif element == 0:
                             break
                         else:
+                            generated_sentence =  generated_sentence + ' ' + 'UNK'
                             print "UNK",
+
                     print ""
 
-                print "time to make conditional samples", time.time() - t0
+                    log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
+
+
+                time_conditional_samples = time.time() - t0
+                log.log({'Time_conditional_samples': time_conditional_samples})
 
             # validate model on validation set and early stop if necessary
             if numpy.mod(uidx, validFreq) == 0:
@@ -461,18 +504,18 @@ def train(dim_word=100,  # word vector dimensionality
                         numpy.array(history_errs)[:-patience].min():
                     bad_counter += 1
                     if bad_counter > patience:
-                        print 'Early Stop!'
+                        LOGGER.info("Early Stop!")
                         estop = True
                         break
 
                 if numpy.isnan(valid_err):
                     ipdb.set_trace()
 
-                print 'Valid ', valid_err
+                log.log({'Valid_Err': valid_err})
 
             # finish after this many updates
             if uidx >= finish_after:
-                print 'Finishing after %d iterations!' % uidx
+                log.log({'Finishing_after': uidx})
                 estop = True
                 break
 
@@ -488,7 +531,7 @@ def train(dim_word=100,  # word vector dimensionality
     valid_err = pred_probs(f_log_probs, prepare_data,
                            model_options, valid).mean()
 
-    print 'Valid ', valid_err
+    log.log({'Valid_Err': valid_err})
 
     params = copy.copy(best_p)
     numpy.savez(saveto, zipped_params=best_p,
@@ -499,4 +542,11 @@ def train(dim_word=100,  # word vector dimensionality
 
 
 if __name__ == '__main__':
-    pass
+    LOGGER.info('Connecting to worker')
+    worker = Worker(control_port=5567)
+    LOGGER.info('Retrieving configuration')
+    config = worker.send_req('config')
+    train(worker, config['model'], config['data'],
+          **merge(config['training'], config['management'], config['multi'],config['model'], config['data']))
+
+
