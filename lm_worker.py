@@ -481,9 +481,10 @@ def train(worker, model_options, data_options,
                             generated_sentence =  generated_sentence + ' ' + 'UNK'
                             print "UNK",
 
-                    print ""
 
                     log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
+                    generated_sentence = generated_sentence.decode('utf-8')
+                    log.log({'Generated_Sample ' + str(count_gen) : generated_sentence})
 
 
                 time_conditional_samples = time.time() - t0

@@ -1,6 +1,8 @@
 - Install platoon
 - Install mimir (https://github.com/bartvm/mimir)
 
+Discriminator code needs to be refactored. 
+
 To launch the code
 
 - python lm_contoller.py config.json in one terminal 
