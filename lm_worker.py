@@ -247,11 +247,11 @@ def train(worker, model_options, data_options,
 
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
-                                                 tparams_gen, learning_rate = 0.001,
-                                                 beta1 = 0.5)
+                                                 tparams_gen, learning_rate = 0.0001,
+                                                 beta1 = 0.9)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
-                                                     d.params, learning_rate = 0.001,
+                                                     d.params, learning_rate = 0.0001,
                                                      beta1 = 0.9)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],

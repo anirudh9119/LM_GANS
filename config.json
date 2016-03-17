@@ -37,6 +37,6 @@
     "dim_word": 620,
     "encoder": "gru",
     "n_words": 30000,
-    "train_generator_flag": false
+    "train_generator_flag": true
   }
 }
