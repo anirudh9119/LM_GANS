@@ -53,6 +53,61 @@ LOGGER = logging.getLogger(__name__)
 use_gan_objective = True
 profile = False
 
+#import sklearn
+from sklearn.manifold import TSNE
+
+# We'll hack a bit with the t-SNE code in sklearn 0.15.2.
+#from sklearn.metrics.pairwise import pairwise_distances
+#from sklearn.manifold.t_sne import (_kl_divergence) #_joint_probabilities
+#from sklearn.utils.extmath import _ravel
+# Random state.
+RS = 20150101
+
+# We'll use matplotlib for graphics.
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as PathEffects
+#import matplotlib
+
+# We import seaborn to make nice plots.
+import seaborn as sns
+sns.set_style('darkgrid')
+sns.set_palette('muted')
+sns.set_context("notebook", font_scale=1.5,
+                 rc={"lines.linewidth": 2.5})
+
+# We'll generate an animation with matplotlib and moviepy.
+#from moviepy.video.io.bindings import mplfig_to_npimage
+#import moviepy.editor as mpy
+
+def scatter(x, colors):
+     # We choose a color palette with seaborn.
+     palette = numpy.array(sns.color_palette("hls", 10))
+
+     # We create a scatter plot.
+     f = plt.figure(figsize=(8, 8))
+     ax = plt.subplot(aspect='equal')
+     sc = ax.scatter(x[:,0], x[:,1], lw=0, s=40,
+                     c=palette[colors.astype(numpy.int)])
+     plt.xlim(-25, 25)
+     plt.ylim(-25, 25)
+     ax.axis('off')
+     ax.axis('tight')
+
+     # We add the labels for each digit.
+     txts = []
+     for i in range(2):
+         # Position of each label.
+         xtext, ytext = numpy.median(x[colors == i, :], axis=0)
+         txt = ax.text(xtext, ytext, str(i), fontsize=24)
+         txt.set_path_effects([
+             PathEffects.Stroke(linewidth=5, foreground="w"),
+             PathEffects.Normal()])
+         txts.append(txt)
+
+     return f, ax, sc, txts
+
+
+
 def train(worker, model_options, data_options,
           dim_word,  # word vector dimensionality
           dim,  # the number of GRU units
@@ -81,7 +136,9 @@ def train(worker, model_options, data_options,
           train_generator_flag,
           batch_port,
           log_port,
-          control_port):
+          control_port,
+          save_tsne,
+          model_name):
 
     LOGGER.info('Connecting to data socket ({}) and loading validation data'
                     .format(batch_port))
@@ -139,14 +196,14 @@ def train(worker, model_options, data_options,
         cost,\
         bern_dist,\
         uniform_sampling,\
-        hidden_states, emb_obs = build_GAN_model(tparams, model_options)
+        hidden_states, emb_obs, get_hidden = build_GAN_model(tparams, model_options)
 
     trng_sampled, \
         use_noise_sampled, \
         x_sampled, x_mask_sampled, \
         opt_ret_sampled, cost_sampled,\
         bern_dist_sampled, uniform_sampling_sampled, \
-        hidden_states_sampled, emb_sampled = build_GAN_model(tparams, model_options)
+        hidden_states_sampled, emb_sampled, get_hidden_sampled = build_GAN_model(tparams, model_options)
 
 
     # hidden states are minibatch x sequence x feature
@@ -261,13 +318,15 @@ def train(worker, model_options, data_options,
                                                      beta1 = 0.9)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
-                                          outputs = {'accuracy' : d.accuracy, 'classification' : d.classification},
+                                          outputs = {'accuracy' : d.accuracy,
+                                                     'classification' : d.classification},
                                           updates = discriminator_gan_updates)
 
     train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                       outputs = {'accuracy' : d.accuracy,
                                                  'classification' : d.classification,
-                                                 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0])))},
+                                                 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
+                                                 'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
                                       updates = generator_gan_updates)
 
     LOGGER.info('Training generator against disc!')
@@ -291,10 +350,8 @@ def train(worker, model_options, data_options,
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
-
             #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
-
 
             log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
@@ -303,6 +360,14 @@ def train(worker, model_options, data_options,
                                  bern_dist.astype('float32'),
                                  uniform_sampling.astype('float32'))
 
+            real_hidden_state = get_hidden(x.astype('int32'),
+                                           x_mask.astype('float32'),
+                                           bern_dist.astype('float32'),
+                                           uniform_sampling.astype('float32'))
+
+            #Taking the last hidden state
+            real_hidden_state = real_hidden_state[0]
+            real_hidden = real_hidden_state[:][maxlen - 1]
 
             # do the update on parameters
             f_update(lrate)
@@ -369,6 +434,23 @@ def train(worker, model_options, data_options,
                          'gen_mask_shape': genx_mask.shape})
 
 
+                generated_hidden_state = get_hidden_sampled(genx.astype('int32'),
+                                                            genx_mask.astype('float32'),
+                                                            bern_dist.astype('float32'),
+                                                            uniform_sampling.astype('float32'))
+
+                generated_hidden_state = generated_hidden_state[0]
+                generated_hidden = generated_hidden_state[:][maxlen-1]
+
+                if numpy.mod(uidx, 50) == 0:
+                    hidden_state_plotted = numpy.concatenate((real_hidden, generated_hidden), axis=0)
+                    target_variable = numpy.asarray(([1] * batch_size) + ([0] * batch_size)).astype('int32')
+
+                    digits_proj = TSNE(random_state=RS).fit_transform(hidden_state_plotted)
+                    scatter(digits_proj, target_variable)
+                    #plt.savefig('images/' + 'hidden_tsne-generated_' + str(uidx) + '.png', dpi=120)
+    #                plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
+
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
@@ -382,6 +464,7 @@ def train(worker, model_options, data_options,
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
+
 
                     elif train_generator_flag and last_acc > 0.8:
                         LOGGER.info("Training discriminator and generator")
@@ -437,6 +520,11 @@ def train(worker, model_options, data_options,
                         log.log({"Fake_Sentence" : sentence_print,
                                  "Fake_Sentence_Index" : str(i),
                                  "Fake_Sentence" : str(c[i])})
+
+                    if numpy.isnan(c[:32].mean()) or numpy.isinf(c[:32].mean()) or numpy.isnan(c[32:].mean()) or numpy.isnan(c[32:].mean()):
+                        LOGGER.info("Nan Detected with Disc cost!")
+                        ipdb.set_trace()
+                        continue;
 
                     log.log({'Mean_pos_scores': c[:32].mean(),
                              'Mean_neg_scores': c[32:].mean()})
@@ -546,7 +634,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=5567)
+    worker = Worker(control_port=9567)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],

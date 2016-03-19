@@ -31,7 +31,7 @@ from ConvolutionalLayer import ConvPoolLayer
 class discriminator:
 
     '''
-    target and features will contain BOTH real and generated.  
+    target and features will contain BOTH real and generated.
 
     Input hidden state features are:
      minibatch index x sequence x feature
@@ -44,12 +44,12 @@ class discriminator:
 
         h_initial_1 = DenseLayer((mb_size, num_features), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_initial_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
-        
+
         #when training generator, use hidden state features
 
         features_seq_first = hidden_state_features
-        
-        #features: sequence x example x features.  
+
+        #features: sequence x example x features.
 
         features_lst = []
 
@@ -76,14 +76,17 @@ class discriminator:
         h_out_3 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
 
+
         h_out_1_value = h_out_1.get_output_for(final_out)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
         h_out_3_value = h_out_3.get_output_for(h_out_2_value)
         h_out_4_value = h_out_4.get_output_for(h_out_3_value)
-        raw_y = h_out_4_value
+        #raw_y = h_out_4_value
+        raw_y = T.clip(h_out_4_value, -20.0, 20.0)
         classification = T.nnet.sigmoid(raw_y)
 
         self.loss = -1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten()))))
+
 
         self.classification = classification
 

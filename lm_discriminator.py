@@ -4,9 +4,7 @@ Build a simple neural language model using GAN Auxillary loss
 import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-from straight_through_op_2 import straight_through
 import numpy
-from theano.ifelse import ifelse
 import os
 
 
@@ -58,7 +56,16 @@ def build_GAN_model(tparams, options):
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
                                             mask=x_mask)
-    proj_h = proj[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
+    proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
+                                            prefix='encoder_1',
+                                            mask=None)
+    proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
+                                            prefix='encoder_2',
+                                            mask=None)
+
+    proj_h = tensor.concatenate([proj, proj_1, proj_2], axis=0)
+
+    proj_h = proj_h[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
     opt_ret['proj_h'] = proj_h
 
     # compute word probabilities
@@ -68,6 +75,8 @@ def build_GAN_model(tparams, options):
                                     prefix='ff_logit_prev', activ='linear')
 
     logit = tensor.tanh(logit_lstm + logit_prev)
+
+
     logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit',
                                activ='linear')
     logit_shp = logit.shape
@@ -82,7 +91,10 @@ def build_GAN_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, proj_h, emb#get_layer("gru")[1](tparams, emb, options, prefix='encoder', mask=x_mask)[0], emb
+    get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[proj_h])
+
+    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, proj_h, emb, get_proj_h
+
 
 # build a sampler
 def build_GAN_sampler(tparams, options, trng):
@@ -98,6 +110,16 @@ def build_GAN_sampler(tparams, options, trng):
 
     # apply one step of gru layer
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
+                                            prefix='encoder',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state)
+    proj = get_layer(options['encoder'])[1](tparams, proj[0], options,
+                                            prefix='encoder',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state)
+    proj = get_layer(options['encoder'])[1](tparams, proj[0], options,
                                             prefix='encoder',
                                             mask=None,
                                             one_step=True,

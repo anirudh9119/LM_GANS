@@ -5,25 +5,26 @@ import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
-import cPickle as pkl
+#import cPickle as pkl
 import ipdb
 import numpy
-import copy
+#import copy
 
 import numpy as np
 
 import os
-import warnings
+#import warnings
 import sys
-import time
+#import time
 
 from collections import OrderedDict
 
-from data_iterator import TextIterator
-from utils import zipp, unzip, init_tparams, norm_weight, load_params, itemlist, dropout_layer, _p, init_tparams
+#from data_iterator import TextIterator
+#from utils import zipp, unzip, init_tparams, norm_weight, load_params, itemlist, dropout_layer, _p, init_tparams
+from utils import  norm_weight
 
 from layers import get_layer
-import optimizers
+#import optimizers
 
 
 
@@ -62,7 +63,7 @@ def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
 
 
     n_samples = len(seqs_x)
-    maxlen_x = numpy.max(lengths_x) + 1
+#    maxlen_x = numpy.max(lengths_x) + 1
 
 
     x = numpy.zeros((maxlen, n_samples)).astype('int64')
@@ -83,6 +84,14 @@ def init_params(options):
     params = get_layer(options['encoder'])[0](options, params,
                                               prefix='encoder',
                                               nin=options['dim_word'],
+                                              dim=options['dim'])
+    params = get_layer(options['encoder'])[0](options, params,
+                                              prefix='encoder_1',
+                                              nin=options['dim'],
+                                              dim=options['dim'])
+    params = get_layer(options['encoder'])[0](options, params,
+                                              prefix='encoder_2',
+                                              nin=options['dim'],
                                               dim=options['dim'])
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm',
