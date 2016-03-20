@@ -9,6 +9,7 @@ import logging
 from multiprocessing import Process
 reload(sys)
 sys.setdefaultencoding("utf-8")
+import time
 
 import numpy
 from mimir import ServerLogger
@@ -144,7 +145,7 @@ if __name__ == '__main__':
         config = json.load(f)
     #num_workers = int(sys.argv[2])
     # Create unique experiment ID and backup config file
-    experiment_id = binascii.hexlify(os.urandom(3)).decode()
+    experiment_id = str(int(time.time()))#binascii.hexlify(os.urandom(3)).decode()
     shutil.copyfile(sys.argv[1], 'logs/{}.config.json'.format(experiment_id))
     # Start controller
     l = LMController(experiment_id, config)

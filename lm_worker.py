@@ -16,6 +16,7 @@ import logging
 import theano
 import theano.tensor as tensor
 import lasagne
+import random
 
 import cPickle as pkl
 import ipdb
@@ -377,6 +378,7 @@ def train(worker, model_options, data_options,
             log_entry['average_source_length'] = \
                                          float(x_mask.sum(0).mean())
 
+
             log.log(log_entry)
 
             # check for bad numbers
@@ -503,7 +505,8 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        log.log({"Real_Sentence" : sentence_print,
+                        if random.uniform(0,1) < 0.05:
+                            log.log({"Real_Sentence" : sentence_print,
                                  "Real_Sentence_Index" : str(i),
                                  "Real_Sentence_Accuracy" :str(c[i])})
 
@@ -517,7 +520,8 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        log.log({"Fake_Sentence" : sentence_print,
+                        if random.uniform(0,1) < 0.05:
+                            log.log({"Fake_Sentence" : sentence_print,
                                  "Fake_Sentence_Index" : str(i),
                                  "Fake_Sentence" : str(c[i])})
 
@@ -573,7 +577,8 @@ def train(worker, model_options, data_options,
                         else:
                             generated_sentence += 'UNK '
 
-                    log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
+                    if random.uniform(0,1) < 0.05:
+                        log.log({'Generated_Sample ' + str(count_gen) : generated_sentence.decode('utf-8')})
                     generated_sentence = generated_sentence.decode('utf-8')
 
 
@@ -634,10 +639,9 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=9567)
+    worker = Worker(control_port=5570)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
-    train(worker, config['model'], config['data'],
-          **merge(config['training'], config['management'], config['multi'],config['model'], config['data']))
+    train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))
 
 
