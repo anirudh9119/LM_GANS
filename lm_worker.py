@@ -449,7 +449,7 @@ def train(worker, model_options, data_options,
                     digits_proj = TSNE(random_state=RS).fit_transform(hidden_state_plotted)
                     scatter(digits_proj, target_variable)
                     #plt.savefig('images/' + 'hidden_tsne-generated_' + str(uidx) + '.png', dpi=120)
-    #                plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
+                    #plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
 
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
@@ -592,7 +592,7 @@ def train(worker, model_options, data_options,
                     best_p = unzip(tparams)
                     bad_counter = 0
                 if len(history_errs) > patience and valid_err >= \
-                        numpy.array(history_errs)[:-patience].min():
+                       numpy.array(history_errs)[:-patience].min():
                     bad_counter += 1
                     if bad_counter > patience:
                         LOGGER.info("Early Stop!")
@@ -634,7 +634,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=9567)
+    worker = Worker(control_port=5567)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],

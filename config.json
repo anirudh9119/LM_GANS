@@ -15,7 +15,7 @@
   "management": {
     "sampleFreq": 1,
     "validFreq": 1000,
-    "saveto": "./models/model_lm_nogan.npz",
+    "saveto": "/Tmp/anirudhg/LM_GANS/models/model_multiple_hidden_lm.npz",
     "reload_": false,
     "dispFreq": 1000,
     "saveFreq": 1000
@@ -32,11 +32,12 @@
   },
   "model": {
     "dim": 1024,
-    "dim_word": 512,
     "use_dropout": false,
     "dim_word": 620,
     "encoder": "gru",
     "n_words": 30000,
-    "train_generator_flag": false
+    "train_generator_flag": true,
+    "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_gan",
+    "model_name": "mulitple_hidden_states_gan"
   }
 }
