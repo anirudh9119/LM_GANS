@@ -319,6 +319,9 @@ def train(worker, model_options, data_options,
                                                      d.params, learning_rate = 0.0001,
                                                      beta1 = 0.5)
 
+
+    disc_grad = tensor.sum(tensor.abs_(tensor.grad(generator_loss, hidden_states_joined)))
+
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {'accuracy' : d.accuracy,
                                                      'classification' : d.classification},
@@ -328,8 +331,12 @@ def train(worker, model_options, data_options,
                                       outputs = {'accuracy' : d.accuracy,
                                                  'classification' : d.classification,
                                                  'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
-                                                 'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
+                                                 'g_loss' : tensor.grad(generator_loss, tparams.values()[0]),
+                                                 'disc_grad' : disc_grad,
+                                                 'hidden_states_shape' : hidden_states_joined.shape},
                                       updates = generator_gan_updates)
+
+
 
     for eidx in xrange(max_epochs):
         n_samples = 0
@@ -464,7 +471,7 @@ def train(worker, model_options, data_options,
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
-                    if train_generator_flag and discriminator_accuracy_moving_average > 0.99:
+                    if train_generator_flag and last_acc > 0.99:
                         print "Training generator"
                         log.log({'update type' : "generator"})
                         results_map = train_generator(x, x_mask,
@@ -475,7 +482,7 @@ def train(worker, model_options, data_options,
                                                       uniform_sampling.astype('float32'), target)
 
 
-                    elif train_generator_flag and discriminator_accuracy_moving_average > 0.8:
+                    elif train_generator_flag and last_acc > 0.8:
                         print "Training discriminator and generator"
                         log.log({'update type' : 'discriminator and generator'})
                         results_map = train_discriminator(x, x_mask,
@@ -489,6 +496,11 @@ def train(worker, model_options, data_options,
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
+
+                        print "param grad", results_map['g']
+                        print "h grad", results_map['disc_grad']
+                        print "hidden states shape", results_map['hidden_states_shape']
+
                     else:
                         print "Just training discriminator"
                         log.log({'update type' : 'discriminator'})
