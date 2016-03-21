@@ -9,6 +9,7 @@ import logging
 from multiprocessing import Process
 reload(sys)
 sys.setdefaultencoding("utf-8")
+import time
 
 import numpy
 from mimir import ServerLogger
@@ -52,9 +53,8 @@ class LMController(Controller):
         self._stop = False
 
         self.experiment_id = experiment_id
-        ServerLogger(filename='{}.log.jsonl.gz'.format(self.experiment_id),
-                     threaded=True, port=config['multi']['log_port'])
-
+        ServerLogger(filename='logs/{}.log.jsonl.gz'.format(self.experiment_id),
+                     threaded=True, port=config['multi']['log_port'], formatter = None)
 
 
     def start_batch_server(self):
@@ -144,8 +144,8 @@ if __name__ == '__main__':
         config = json.load(f)
     #num_workers = int(sys.argv[2])
     # Create unique experiment ID and backup config file
-    experiment_id = binascii.hexlify(os.urandom(3)).decode()
-    shutil.copyfile(sys.argv[1], '{}.config.json'.format(experiment_id))
+    experiment_id = str(int(time.time()))#binascii.hexlify(os.urandom(3)).decode()
+    shutil.copyfile(sys.argv[1], 'logs/{}.config.json'.format(experiment_id))
     # Start controller
     l = LMController(experiment_id, config)
     l.start_batch_server()

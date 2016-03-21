@@ -8,7 +8,7 @@
     "max_epochs": 5000
   },
   "multi": {
-    "control_port": 5567,
+    "control_port": 5570,
     "batch_port": 5568,
     "log_port": 5569
   },
@@ -34,10 +34,12 @@
     "dim": 1024,
     "use_dropout": false,
     "dim_word": 620,
+    "use_dropout": false,
     "encoder": "gru",
     "n_words": 30000,
     "train_generator_flag": true,
     "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_gan",
     "model_name": "mulitple_hidden_states_gan"
   }
+
 }
