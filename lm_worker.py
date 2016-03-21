@@ -284,6 +284,7 @@ def train(worker, model_options, data_options,
                       target = discriminator_target)
 
     last_acc = 0.0
+    discriminator_accuracy_moving_average = 0.0
 
     '''
         -Get two update functions:
@@ -311,12 +312,12 @@ def train(worker, model_options, data_options,
 
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
-                                                 tparams_gen, learning_rate = 0.001,
+                                                 tparams_gen, learning_rate = 0.0001,
                                                  beta1 = 0.5)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
-                                                     d.params, learning_rate = 0.001,
-                                                     beta1 = 0.9)
+                                                     d.params, learning_rate = 0.0001,
+                                                     beta1 = 0.5)
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {'accuracy' : d.accuracy,
@@ -330,7 +331,6 @@ def train(worker, model_options, data_options,
                                                  'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
                                       updates = generator_gan_updates)
 
-    LOGGER.info('Training generator against disc!')
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -344,7 +344,7 @@ def train(worker, model_options, data_options,
             # pad batch and create mask
             x, x_mask = prepare_data(x, maxlen, n_words)
             if x is None:
-                LOGGER.info('Minibatch with zero sample under length')
+                log.log({'minibatch status' : 'Minibatch with zero sample under length'})
                 uidx -= 1
                 continue
 
@@ -380,6 +380,9 @@ def train(worker, model_options, data_options,
 
 
             log.log(log_entry)
+
+            print "Number samples processed", n_samples
+            print "Training Likelihood Cost", cost
 
             # check for bad numbers
             if numpy.isnan(cost) or numpy.isinf(cost):
@@ -444,22 +447,26 @@ def train(worker, model_options, data_options,
                 generated_hidden_state = generated_hidden_state[0]
                 generated_hidden = generated_hidden_state[:][maxlen-1]
 
-                if numpy.mod(uidx, 50) == 0:
-                    hidden_state_plotted = numpy.concatenate((real_hidden, generated_hidden), axis=0)
-                    target_variable = numpy.asarray(([1] * batch_size) + ([0] * batch_size)).astype('int32')
+                try:
+                    if numpy.mod(uidx, 50) == 0:
+                        hidden_state_plotted = numpy.concatenate((real_hidden, generated_hidden), axis=0)
+                        target_variable = numpy.asarray(([1] * batch_size) + ([0] * batch_size)).astype('int32')
 
-                    digits_proj = TSNE(random_state=RS).fit_transform(hidden_state_plotted)
-                    scatter(digits_proj, target_variable)
-                    #plt.savefig('images/' + 'hidden_tsne-generated_' + str(uidx) + '.png', dpi=120)
-    #                plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
+                        digits_proj = TSNE(random_state=RS).fit_transform(hidden_state_plotted)
+                        scatter(digits_proj, target_variable)
+                        plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
+                except Exception as e:
+                    print "UNABLE TO RUN T-SNE"
+                    print e.message
 
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
-                    if train_generator_flag and last_acc > 0.99:
-                        LOGGER.info("Training generator")
+                    if train_generator_flag and discriminator_accuracy_moving_average > 0.99:
+                        print "Training generator"
+                        log.log({'update type' : "generator"})
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
@@ -468,8 +475,9 @@ def train(worker, model_options, data_options,
                                                       uniform_sampling.astype('float32'), target)
 
 
-                    elif train_generator_flag and last_acc > 0.8:
-                        LOGGER.info("Training discriminator and generator")
+                    elif train_generator_flag and discriminator_accuracy_moving_average > 0.8:
+                        print "Training discriminator and generator"
+                        log.log({'update type' : 'discriminator and generator'})
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
@@ -482,7 +490,8 @@ def train(worker, model_options, data_options,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
                     else:
-                        LOGGER.info("Training discriminator")
+                        print "Just training discriminator"
+                        log.log({'update type' : 'discriminator'})
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
@@ -494,6 +503,15 @@ def train(worker, model_options, data_options,
                     log.log({'single_gen_disc_update': single_gen_disc_update,
                              'Discriminator_Accuracy': results_map['accuracy'],
                              'Mean scores (first should be higher than second)' : (c[:32].mean(), c[32:].mean())})
+                
+
+                    discriminator_accuracy_moving_average = discriminator_accuracy_moving_average * 0.99 + results_map['accuracy'] * 0.01
+
+
+                    print "================================================================================================================="
+                    print "Discriminator accuracy", results_map['accuracy']
+                    print "Discriminator average accuracy", discriminator_accuracy_moving_average
+
 
                     for i in range(0, 32):
                         sentence_print = ""
@@ -505,8 +523,7 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        if random.uniform(0,1) < 0.05:
-                            log.log({"Real_Sentence" : sentence_print,
+                        log.log({"Real_Sentence" : sentence_print,
                                  "Real_Sentence_Index" : str(i),
                                  "Real_Sentence_Accuracy" :str(c[i])})
 
@@ -527,6 +544,7 @@ def train(worker, model_options, data_options,
 
                     if numpy.isnan(c[:32].mean()) or numpy.isinf(c[:32].mean()) or numpy.isnan(c[32:].mean()) or numpy.isnan(c[32:].mean()):
                         LOGGER.info("Nan Detected with Disc cost!")
+                        log.log({'disc status' : "NAN DETECTED"})
                         ipdb.set_trace()
                         continue;
 
@@ -538,7 +556,6 @@ def train(worker, model_options, data_options,
                     last_acc = results_map['accuracy']
 
 
-                LOGGER.info("Generating conditional sentences")
 
                 initial_text_lst = []
                 initial_text_lst.append(["he", "spent", "his"])
@@ -608,6 +625,12 @@ def train(worker, model_options, data_options,
                     ipdb.set_trace()
 
                 log.log({'Valid_Err': valid_err})
+
+                print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+                print ""
+                print "Validation Error Computed", valid_err
+                print ""
+                print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
             # finish after this many updates
             if uidx >= finish_after:

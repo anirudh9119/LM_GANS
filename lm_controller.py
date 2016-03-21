@@ -54,8 +54,7 @@ class LMController(Controller):
 
         self.experiment_id = experiment_id
         ServerLogger(filename='logs/{}.log.jsonl.gz'.format(self.experiment_id),
-                     threaded=True, port=config['multi']['log_port'])
-
+                     threaded=True, port=config['multi']['log_port'], formatter = None)
 
 
     def start_batch_server(self):
