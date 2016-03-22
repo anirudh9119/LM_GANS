@@ -17,6 +17,7 @@ import theano
 import theano.tensor as tensor
 import lasagne
 import random
+import numpy as np
 
 import cPickle as pkl
 import ipdb
@@ -278,7 +279,7 @@ def train(worker, model_options, data_options,
     discriminator_target = tensor.ivector()
 
     d = discriminator(num_hidden = 2048,
-                      num_features = 1024,
+                      num_features = 1024 * 3 + 620,
                       seq_length = 30, mb_size = 64,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
@@ -307,16 +308,16 @@ def train(worker, model_options, data_options,
     # 'ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']
 
     for key in tparams.keys():
-        if not (key in ['ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']):
+        if not (key in ['ff_logit_W', 'ff_logit_b']):
             tparams_gen.append(tparams[key])
 
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
-                                                 tparams_gen, learning_rate = 0.0001,
+                                                 tparams_gen, learning_rate = 0.001,
                                                  beta1 = 0.5)
 
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
-                                                     d.params, learning_rate = 0.0001,
+                                                     d.params, learning_rate = 0.001,
                                                      beta1 = 0.5)
 
 
@@ -426,6 +427,7 @@ def train(worker, model_options, data_options,
                     if count_gen >= 32:
                         break
 
+                final_state_sampled_sampling_net = next_state_sampled
 
                 sampling_time = time.time() - t0
                 log.log({'Sampling_time': sampling_time})
@@ -450,6 +452,20 @@ def train(worker, model_options, data_options,
                                                             genx_mask.astype('float32'),
                                                             bern_dist.astype('float32'),
                                                             uniform_sampling.astype('float32'))
+
+                h_samp = final_state_sampled_sampling_net
+                h_net = generated_hidden_state[0][:,-1,:]
+
+                print "final_state_sampled_sampling_net", h_samp.shape
+                print "final_state_sampled_final_net", h_net.shape
+
+                if h_samp.shape[0] == 30:
+                    print "difference", np.sum(np.abs(h_samp - h_net))
+                if h_samp.shape[0] > 16:
+                    print "diff t = 15", np.sum(np.abs(h_samp[15] - h_net[15]))
+                    print "sum t = 15", np.sum(np.abs(h_net[15]))
+
+                print "difference t=0", np.sum(np.abs(h_samp[0] - h_net[0]))
 
                 generated_hidden_state = generated_hidden_state[0]
                 generated_hidden = generated_hidden_state[:][maxlen-1]

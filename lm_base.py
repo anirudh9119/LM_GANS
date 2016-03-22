@@ -95,7 +95,7 @@ def init_params(options):
                                               dim=options['dim'])
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm',
-                                nin=options['dim'], nout=options['dim_word'],
+                                nin=options['dim'] * 3, nout=options['dim_word'],
                                 ortho=False)
     params = get_layer('ff')[0](options, params, prefix='ff_logit_prev',
                                 nin=options['dim_word'],
@@ -177,8 +177,24 @@ def build_sampler(tparams, options, trng):
                                             prefix='encoder',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state)
-    next_state = proj[0]
+                                            init_state=init_state[:,:1024])
+
+    proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
+                                            prefix='encoder_1',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state[:,1024:2048])
+
+    proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
+                                            prefix='encoder_2',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state[:,2048:2048+1024])
+
+
+    next_state = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 1)
+    #32 x 1024
+
 
     # compute the output probability dist and sample
     logit_lstm = get_layer('ff')[1](tparams, next_state, options,
@@ -209,7 +225,7 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
 
     # initial token is indicated by a -1 and initial state is zero
     next_w = -1 * numpy.ones((1,)).astype('int64')
-    next_state = numpy.zeros((1, options['dim'])).astype('float32')
+    next_state = numpy.zeros((1, 3 * options['dim'])).astype('float32')
 
     next_state_lst = []
 

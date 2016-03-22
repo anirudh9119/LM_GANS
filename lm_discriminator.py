@@ -68,18 +68,19 @@ def build_GAN_model(tparams, options):
     #1024 x 30
 
     proj_2[0] = proj_2[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
-    
+ 
+    states_concat = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 2)
 
     # compute word probabilities
-    logit_lstm = get_layer('ff')[1](tparams, proj_2[0], options,
+    logit_lstm = get_layer('ff')[1](tparams, states_concat, options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
 
     logit_init = tensor.tanh(logit_lstm + logit_prev)
 
-    proj_h = proj[0]#tensor.concatenate([proj[0], proj_1[0], proj_2[0], logit_init], axis=2)
-    opt_ret['proj_h'] = proj_h
+    #proj_h = proj[0]
+    #opt_ret['proj_h'] = proj_h
 
     logit = get_layer('ff')[1](tparams, logit_init, options, prefix='ff_logit',
                                activ='linear')
@@ -95,9 +96,11 @@ def build_GAN_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[proj_h])
+    get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat])
 
-    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, proj_h, emb, get_proj_h
+    states_concat_disc = tensor.concatenate([proj[0], proj_1[0], proj_2[0], logit_init], axis = 2)
+
+    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h
 
 
 
