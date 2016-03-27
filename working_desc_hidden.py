@@ -39,6 +39,7 @@ class discriminator:
         self.mb_size = mb_size
         self.seq_length = seq_length
 
+        '''
         #(1920, 3692), (2048, 4096)
         gru_params_1 = init_tparams(param_init_gru(None, {}, prefix = "gru1", dim = num_hidden, nin = num_features))
         gru_params_2 = init_tparams(param_init_gru(None, {}, prefix = "gru2", dim = num_hidden, nin = num_hidden + num_features))
@@ -48,29 +49,27 @@ class discriminator:
         gru_2_out = gru_layer(gru_params_2, T.concatenate([gru_1_out, hidden_state_features], axis = 2), None, prefix = 'gru2', backwards = True)[0]
         gru_3_out = gru_layer(gru_params_3, T.concatenate([gru_2_out, hidden_state_features], axis = 2), None, prefix = 'gru3')[0]
 
-        final_out_recc = T.mean(gru_3_out, axis = 0)
-
-        '''
+        final_out = T.mean(gru_3_out, axis = 0)
         h_out_1 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
         '''
-        # 3692, 1844,920, 458
+
+
         # (30, 64, 3692)
-        # 1644, 820, 408, 202
         c1 = ConvPoolLayer(in_channels = 64, out_channels = 64,
-                           batch_size = 30, in_length = 1644,
+                           batch_size = 30, in_length = 3692,
                            kernel_len = 6, stride = 2)
 
         # (30, 96, 1022)
         c2 = ConvPoolLayer(in_channels = 64, out_channels = 64,
-                           batch_size = 30, in_length = 820,
+                           batch_size = 30, in_length = 1844,
                            kernel_len = 6, stride = 2)
 
         # (30, 96, 509)
         c3 = ConvPoolLayer(in_channels = 64, out_channels = 64,
-                           batch_size = 30, in_length = 408,
+                           batch_size = 30, in_length = 920,
                            kernel_len = 6, stride = 2)
         #(30, 96, 458)
 
@@ -78,25 +77,17 @@ class discriminator:
         c2o = c2.output(c1o)
         c3o = c3.output(c2o)
 
-        final_out_conv = T.mean(c3o, axis = 0)
+        final_out = T.mean(c3o, axis = 0)
 
-        '''
         h_out_1 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((64, 458), num_units = 1, nonlinearity=None)
-        '''
-        h_out_1 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_2 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_3 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_4 = DenseLayer((64, 2250), num_units = 1, nonlinearity=None)
 
-        h_out_1_value = h_out_1.get_output_for(T.concatenate([final_out_recc, final_out_conv], axis = 1))
+        h_out_1_value = h_out_1.get_output_for(final_out)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
         h_out_3_value = h_out_3.get_output_for(h_out_2_value)
         h_out_4_value = h_out_4.get_output_for(h_out_3_value)
-
-
         #raw_y = h_out_4_value
         raw_y = T.clip(h_out_4_value, -20.0, 20.0)
         classification = T.nnet.sigmoid(raw_y)
@@ -117,9 +108,9 @@ class discriminator:
 #        self.params += lasagne.layers.get_all_params(h_initial_1,trainable=True)
 #        self.params += lasagne.layers.get_all_params(h_initial_2,trainable=True)
 
-        self.params += gru_params_1.values()
-        self.params += gru_params_2.values()
-        self.params += gru_params_3.values()
+#        self.params += gru_params_1.values()
+#        self.params += gru_params_2.values()
+#        self.params += gru_params_3.values()
 
         layerParams = c1.getParams()
         for paramKey in layerParams:

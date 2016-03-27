@@ -1,7 +1,7 @@
 import theano
 from theano import tensor
 import numpy
-from utils import uniform_weight, ortho_weight, norm_weight
+from utils import ortho_weight , norm_weight #uniform_weight
 
 import settings
 profile = settings.profile
@@ -31,7 +31,7 @@ def linear(x):
 
 
 def relu(x):
-    return T.maximum(0.0, x)
+    return theano.maximum(0.0, x)
 
 # feedforward layer: affine transformation + point-wise nonlinearity
 def param_init_fflayer(options,
@@ -41,7 +41,7 @@ def param_init_fflayer(options,
                        nout=None,
                        ortho=True):
 
-    param[prefix + '_W'] = uniform_weight(nin, nout)
+    param[prefix + '_W'] = norm_weight(nin, nout)
     param[prefix + '_b'] = zero_vector(nout)
 
     return param
@@ -62,7 +62,7 @@ def param_init_gru(options, param, prefix='gru', nin=None, dim=None):
 
     param[prefix + '_W'] = numpy.concatenate(
         [
-            uniform_weight(nin, dim), uniform_weight(nin, dim)
+            norm_weight(nin, dim), norm_weight(nin, dim)
         ],
         axis=1)
     param[prefix + '_U'] = numpy.concatenate(
@@ -72,7 +72,7 @@ def param_init_gru(options, param, prefix='gru', nin=None, dim=None):
         axis=1)
     param[prefix + '_b'] = zero_vector(2 * dim)
 
-    param[prefix + '_Wx'] = uniform_weight(nin, dim)
+    param[prefix + '_Wx'] = norm_weight(nin, dim)
     param[prefix + '_Ux'] = ortho_weight(dim)
     param[prefix + '_bx'] = zero_vector(dim)
 

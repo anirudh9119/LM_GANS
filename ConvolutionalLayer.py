@@ -1,10 +1,6 @@
-import sys
-
 import numpy as np
 import theano
 import theano.tensor as T
-from theano.sandbox.cuda import dnn
-from theano.sandbox.cuda.basic_ops import gpu_contiguous
 
 from lasagne.theano_extensions.conv import conv1d_md
 
@@ -12,8 +8,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 rng = np.random.RandomState(23455)
-# set a fixed number for 2 purpose:
-#  1. repeatable experiments; 2. for multiple-GPU, the same initial weights
+# Set a fixed number for 2 purpose:
+# Repeatable experiments; 2. for multiple-GPU, the same initial weights
 
 
 class Weight(object):
@@ -38,7 +34,9 @@ class Weight(object):
 
 class ConvPoolLayer(object):
 
-    def __init__(self, in_channels, out_channels, in_length, batch_size, kernel_len, stride = 1, activation = "relu", batch_norm = False, unflatten_input = None):
+    def __init__(self, in_channels, out_channels,
+                 in_length, batch_size, kernel_len, stride = 1,
+                 activation = "relu", batch_norm = False, unflatten_input = None):
 
         self.stride = stride
         self.batch_norm = batch_norm
@@ -70,12 +68,9 @@ class ConvPoolLayer(object):
 
         W_shuffled = self.W.val
 
-        #conv_out = dnn.dnn_conv(img=input,
-        #                                kerns=W_shuffled,
-        #                                subsample=(self.convstride, self.convstride),
-        #                                border_mode=self.padsize)
-
-        conv_out = conv1d_md(input, W_shuffled, image_shape = (self.batch_size, self.in_channels, self.in_length), filter_shape = (self.out_channels, self.in_channels, self.filter_length), subsample = (self.stride,))
+        conv_out = conv1d_md(input, W_shuffled, image_shape = (self.batch_size, self.in_channels, self.in_length),
+                                                filter_shape = (self.out_channels, self.in_channels, self.filter_length),
+                                                subsample = (self.stride,))
 
         #conv_out = T.nnet.conv2d(input, W_shuffled, subsample=(1, 1), border_mode='valid')
 
@@ -113,7 +108,7 @@ class ConvPoolLayer(object):
 if __name__ == "__main__":
 
     x = T.tensor3()
-
+    #30 X 64 X 2048!
     randData = np.random.normal(size = (1,3,64)).astype('float32')
 
     c1 = ConvPoolLayer(in_channels = 3, out_channels = 96, batch_size = 1, in_length = 64, kernel_len = 6, stride = 2)

@@ -1,8 +1,8 @@
 from __future__ import print_function
-import binascii
+#import binascii
 import io
 import json
-import os
+#import os
 import shutil
 import sys
 import logging
@@ -53,7 +53,7 @@ class LMController(Controller):
         self._stop = False
 
         self.experiment_id = experiment_id
-        ServerLogger(filename='logs/{}.log.jsonl.gz'.format(self.experiment_id),
+        ServerLogger(filename='/Tmp/anirudhg/LM_GANS/temp_logs_2/{}.log.jsonl.gz'.format(self.experiment_id),
                      threaded=True, port=config['multi']['log_port'], formatter = None)
 
 
@@ -105,9 +105,6 @@ class LMController(Controller):
 
         if req == 'config':
             control_response = self.config
-        #elif req == 'alpha':
-        #    tau = self.config['multi']['train_len']
-        #    control_response = self.beta / tau / self.num_workers
         elif req == 'experiment_id':
             control_response = self.experiment_id
         elif req == 'next':
@@ -145,7 +142,7 @@ if __name__ == '__main__':
     #num_workers = int(sys.argv[2])
     # Create unique experiment ID and backup config file
     experiment_id = str(int(time.time()))#binascii.hexlify(os.urandom(3)).decode()
-    shutil.copyfile(sys.argv[1], 'logs/{}.config.json'.format(experiment_id))
+    shutil.copyfile(sys.argv[1], '/Tmp/anirudhg/LM_GANS/temp_logs_2/{}.config.json'.format(experiment_id))
     # Start controller
     l = LMController(experiment_id, config)
     l.start_batch_server()

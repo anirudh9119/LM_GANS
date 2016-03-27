@@ -204,6 +204,9 @@ def train(worker, model_options, data_options,
         uniform_sampling,\
         hidden_states, emb_obs, get_hidden = build_GAN_model(tparams, model_options)
 
+    #trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h
+
+
     trng_sampled, \
         use_noise_sampled, \
         x_sampled, x_mask_sampled, \
@@ -216,6 +219,7 @@ def train(worker, model_options, data_options,
     #TODO: only using hidden states real.
 
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
+
     #hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
@@ -283,7 +287,7 @@ def train(worker, model_options, data_options,
     discriminator_target = tensor.ivector()
 
     d = discriminator(num_hidden = 2048,
-                      num_features = 1024 + 620,
+                      num_features = 1024 * 3 + 620,
                       seq_length = 30, mb_size = 64,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
@@ -306,40 +310,39 @@ def train(worker, model_options, data_options,
     print "tparam keys"
     print tparams.keys()
 
-    if use_gan_objective:
-        tparams_gen = []
+    tparams_gen = []
 
     #['Wemb', 'encoder_W', 'encoder_U', 'encoder_b', 'encoder_Wx', 'encoder_Ux', 'encoder_bx',
     # 'ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b']
 
-        for key in tparams.keys():
+    for key in tparams.keys():
         #if not (key in ['ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b'] ):
-            if not (key in ['ff_logit_W', 'ff_logit_b'] ):
-                tparams_gen.append(tparams[key])
+        if not (key in ['ff_logit_W', 'ff_logit_b'] ):
+            tparams_gen.append(tparams[key])
 
 
-        generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
-        generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
+    generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
+    generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
                                                  tparams_gen, learning_rate = 0.0001,
                                                  beta1 = 0.5)
 
-        discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
-                                                         d.params, learning_rate = 0.0001,
-                                                         beta1 = 0.5)
+    discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
+                                                     d.params, learning_rate = 0.0001,
+                                                     beta1 = 0.5)
 
-        train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
-                                              outputs = {'accuracy' : d.accuracy,
-                                                         'loss': d.loss,
-                                                         'classification' : d.classification},
-                                              updates = discriminator_gan_updates)
-
-        train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
+    train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {'accuracy' : d.accuracy,
                                                      'classification' : d.classification,
-                                                     'loss': d.loss,
-                                                     'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
-                                                     'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
-                                          updates = generator_gan_updates)
+                                                     'loss': d.loss},
+                                          updates = discriminator_gan_updates)
+
+    train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
+                                      outputs = {'accuracy' : d.accuracy,
+                                                 'classification' : d.classification,
+                                                 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
+                                                 'loss': d.loss,
+                                                 'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
+                                      updates = generator_gan_updates)
 
     for eidx in xrange(max_epochs):
         n_samples = 0
@@ -362,14 +365,14 @@ def train(worker, model_options, data_options,
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
             #TODO: change hardcoded 32 to mb size
-            ud_start = time.time()
+            #ud_start = time.time()
 
             log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
-            cost = f_grad_shared(x.astype('int32'),
-                                 x_mask.astype('float32'),
-                                 bern_dist.astype('float32'),
-                                 uniform_sampling.astype('float32'))
+            #cost = f_grad_shared(x.astype('int32'),
+            #                     x_mask.astype('float32'),
+            #                     bern_dist.astype('float32'),
+            #                     uniform_sampling.astype('float32'))
 
             real_hidden_state = get_hidden(x.astype('int32'),
                                            x_mask.astype('float32'),
@@ -381,25 +384,18 @@ def train(worker, model_options, data_options,
             real_hidden = real_hidden_state[:][maxlen - 1]
 
             # do the update on parameters
-            f_update(lrate)
-            ud = time.time() - ud_start
-            log_entry['update_time'] = ud
-            log_entry['cost'] = float(cost)
-            log_entry['average_source_length'] = \
-                                         float(x_mask.sum(0).mean())
+            #f_update(lrate)
+            #ud = time.time() - ud_start
+            #log_entry['update_time'] = ud
+            #log_entry['cost'] = float(cost)
+            #log_entry['average_source_length'] = \
+            #                             float(x_mask.sum(0).mean())
 
 
             log.log(log_entry)
 
             print "Number samples processed", n_samples
-            print "Training Likelihood Cost", cost
-
-            # check for bad numbers
-            if numpy.isnan(cost) or numpy.isinf(cost):
-                LOGGER.info("Nan Detected")
-                continue;
-
-
+#            print "Training Likelihood Cost", cost
 
             # save the best model so far
             if numpy.mod(uidx, saveFreq) == 0:
@@ -433,6 +429,8 @@ def train(worker, model_options, data_options,
                 sampling_time = time.time() - t0
                 log.log({'Sampling_time': sampling_time})
 
+                results = prepare_data(gensample, minlen=0, maxlen=30, n_words=30000)
+                # See wtf is going on ?
                 results = prepare_data(gensample, maxlen, n_words)
                 genx, genx_mask = results[0], results[1]
 
@@ -446,14 +444,14 @@ def train(worker, model_options, data_options,
                          'genx_shape': genx.shape,
                          'gen_mask_shape': genx_mask.shape})
 
-                if use_gan_objective:
-                    generated_hidden_state = get_hidden_sampled(genx.astype('int32'),
-                                                                genx_mask.astype('float32'),
-                                                                bern_dist.astype('float32'),
-                                                                uniform_sampling.astype('float32'))
 
-                    generated_hidden_state = generated_hidden_state[0]
-                    generated_hidden = generated_hidden_state[:][maxlen-1]
+                generated_hidden_state = get_hidden_sampled(genx.astype('int32'),
+                                                            genx_mask.astype('float32'),
+                                                            bern_dist.astype('float32'),
+                                                            uniform_sampling.astype('float32'))
+
+                generated_hidden_state = generated_hidden_state[0]
+                generated_hidden = generated_hidden_state[:][maxlen-1]
 
                 if flag_save_tsne and numpy.mod(uidx, 50) == 0:
                     for i in range(maxlen):
@@ -480,7 +478,6 @@ def train(worker, model_options, data_options,
                     log.log({'last_accuracy': last_acc})
                     if train_generator_flag and discriminator_accuracy_moving_average > 0.99:
                         print "Training generator"
-                        #log.log({'update type' : "generator"})
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
@@ -488,12 +485,11 @@ def train(worker, model_options, data_options,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
                         log.log({'update type' : "generator",
-                                  'Generator_Loss': results_map['g'],
-                                  'Discriminator_Loss':results_map['loss'] })
+                                 'Generator_Loss': results_map['g'],
+                                 'Discriminator_Loss':results_map['loss'] })
 
 
-
-                    elif train_generator_flag and discriminator_accuracy_moving_average > 0.75:
+                    elif train_generator_flag and discriminator_accuracy_moving_average > 0.8:
                         print "Training discriminator and generator"
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
@@ -506,11 +502,9 @@ def train(worker, model_options, data_options,
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
-
                         log.log({'update type' : "discriminator and generator",
-                                  'Generator_Loss': results_map['g'],
-                                  'Discriminator_Loss':results_map['loss'] })
-
+                                 'Generator_Loss': results_map['g'],
+                                 'Discriminator_Loss':results_map['loss'] })
                     else:
                         print "Just training discriminator"
                         results_map = train_discriminator(x, x_mask,
@@ -519,7 +513,9 @@ def train(worker, model_options, data_options,
                                                           genx, genx_mask, bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'), target)
                         log.log({'update type' : "discriminator",
-                                  'Discriminator_Loss':results_map['loss'] })
+                                 'Discriminator_Loss':results_map['loss'] })
+
+
 
                     single_gen_disc_update =  time.time() - t0
                     c = results_map['classification'].flatten()
@@ -681,7 +677,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=5567)
+    worker = Worker(control_port=8567)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

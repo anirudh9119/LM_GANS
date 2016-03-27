@@ -4,27 +4,14 @@ Build a simple neural language model using GRU units
 import theano
 import theano.tensor as tensor
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-
-#import cPickle as pkl
 import ipdb
 import numpy
-#import copy
-
 import numpy as np
-
 import os
-#import warnings
 import sys
-#import time
-
 from collections import OrderedDict
-
-#from data_iterator import TextIterator
-#from utils import zipp, unzip, init_tparams, norm_weight, load_params, itemlist, dropout_layer, _p, init_tparams
 from utils import  norm_weight
-
 from layers import get_layer
-#import optimizers
 
 
 
@@ -43,7 +30,7 @@ def save_params(params, filename, symlink=None):
 
 
 # batch preparation, returns padded batch and mask
-def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=10):
+def prepare_data(seqs_x, maxlen=30, n_words=30000, minlen=0):
     # x: a list of sentences
     lengths_x = [len(s) for s in seqs_x]
 
@@ -85,6 +72,7 @@ def init_params(options):
                                               prefix='encoder',
                                               nin=options['dim_word'],
                                               dim=options['dim'])
+    '''
     params = get_layer(options['encoder'])[0](options, params,
                                               prefix='encoder_1',
                                               nin=options['dim'],
@@ -93,6 +81,7 @@ def init_params(options):
                                               prefix='encoder_2',
                                               nin=options['dim'],
                                               dim=options['dim'])
+    '''
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm',
                                 nin=options['dim'], nout=options['dim_word'],
@@ -177,7 +166,24 @@ def build_sampler(tparams, options, trng):
                                             prefix='encoder',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state)
+                                            init_state=init_state[:,:1024])
+    '''
+    proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
+                                            prefix='encoder_1',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state[:,1024:2048])
+
+    proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
+                                            prefix='encoder_2',
+                                            mask=None,
+                                            one_step=True,
+                                            init_state=init_state[:,2048:2048+1024])
+
+
+    next_state = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 1)
+    #32 x 1024
+    '''
     next_state = proj[0]
 
     # compute the output probability dist and sample
@@ -185,7 +191,8 @@ def build_sampler(tparams, options, trng):
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
-    logit = tensor.tanh(logit_lstm+logit_prev)
+    logit = tensor.tanh(logit_lstm + logit_prev)
+
     logit = get_layer('ff')[1](tparams, logit, options,
                                prefix='ff_logit', activ='linear')
     next_probs = tensor.nnet.softmax(logit)
@@ -209,7 +216,7 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
 
     # initial token is indicated by a -1 and initial state is zero
     next_w = -1 * numpy.ones((1,)).astype('int64')
-    next_state = numpy.zeros((1, options['dim'])).astype('float32')
+    next_state = numpy.zeros((1, 3 * options['dim'])).astype('float32')
 
     next_state_lst = []
 

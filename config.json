@@ -4,18 +4,18 @@
     "decay_c": 0,
     "patience": 100,
     "finish_after": 10000000,
-    "lrate": 0.0001,
+    "lrate": 0.000001,
     "max_epochs": 5000
   },
   "multi": {
-    "control_port": 5570,
+    "control_port": 5567,
     "batch_port": 5568,
     "log_port": 5569
   },
   "management": {
     "sampleFreq": 1,
-    "validFreq": 1000,
-    "saveto": "/Tmp/anirudhg/LM_GANS/models/model_multiple_hidden_lm.npz",
+    "validFreq": 500,
+    "saveto": "/Tmp/anirudhg/LM_GANS/temp_models/",
     "reload_": false,
     "dispFreq": 1000,
     "saveFreq": 1000
@@ -28,7 +28,7 @@
     "n_words": 30000,
     "valid_batch_size": 32,
     "maxlen": 30,
-    "minlen": 10 
+    "minlen": 0 
   },
   "model": {
     "dim": 1024,
@@ -38,8 +38,10 @@
     "encoder": "gru",
     "n_words": 30000,
     "train_generator_flag": true,
-    "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_gan",
-    "model_name": "mulitple_hidden_states_gan"
+    "flag_save_tsne": false,
+    "use_gan_objective": true,
+    "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_without_gan",
+    "model_name": "mulitple_hidden_states_without_gan"
   }
 
 }

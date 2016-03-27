@@ -56,6 +56,7 @@ def build_GAN_model(tparams, options):
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
                                             mask=x_mask)
+    '''
     proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
                                             prefix='encoder_1',
                                             mask=None)
@@ -63,21 +64,25 @@ def build_GAN_model(tparams, options):
                                             prefix='encoder_2',
                                             mask=None)
 
-    proj_h = tensor.concatenate([proj, proj_1, proj_2], axis=0)
+    #1024 x 30
 
-    proj_h = proj_h[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
-    opt_ret['proj_h'] = proj_h
-
+    proj_2[0] = proj_2[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
+    states_concat = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 2)
+    '''
+    proj[0] = proj[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
+    states_concat = proj[0]
     # compute word probabilities
-    logit_lstm = get_layer('ff')[1](tparams, proj_h, options,
+    logit_lstm = get_layer('ff')[1](tparams, states_concat, options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
 
-    logit = tensor.tanh(logit_lstm + logit_prev)
+    logit_init = tensor.tanh(logit_lstm + logit_prev)
 
+    #proj_h = proj[0]
+    #opt_ret['proj_h'] = proj_h
 
-    logit = get_layer('ff')[1](tparams, logit, options, prefix='ff_logit',
+    logit = get_layer('ff')[1](tparams, logit_init, options, prefix='ff_logit',
                                activ='linear')
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(
@@ -91,64 +96,11 @@ def build_GAN_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[proj_h])
-
-    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, proj_h, emb, get_proj_h
 
 
-# build a sampler
-def build_GAN_sampler(tparams, options, trng):
-    # x: 1 x 1
-    y = tensor.vector('y_sampler', dtype='int64')
-    init_state = tensor.matrix('init_state', dtype='float32')
+    #get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat])
+    ##states_concat_disc = tensor.concatenate([proj[0], proj_1[0], proj_2[0], logit_init], axis = 2)
+    states_concat_disc = tensor.concatenate([proj[0],  logit_init], axis = 2)
+    get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat_disc])
 
-    # if it's the first word, emb should be all zero
-    emb = tensor.switch(y[:, None] < 0,
-                        tensor.alloc(0., 1, tparams['Wemb'].shape[1]),
-                        tparams['Wemb'][y])
-
-
-    # apply one step of gru layer
-    proj = get_layer(options['encoder'])[1](tparams, emb, options,
-                                            prefix='encoder',
-                                            mask=None,
-                                            one_step=True,
-                                            init_state=init_state)
-    proj = get_layer(options['encoder'])[1](tparams, proj[0], options,
-                                            prefix='encoder',
-                                            mask=None,
-                                            one_step=True,
-                                            init_state=init_state)
-    proj = get_layer(options['encoder'])[1](tparams, proj[0], options,
-                                            prefix='encoder',
-                                            mask=None,
-                                            one_step=True,
-                                            init_state=init_state)
-    next_state = proj[0]
-
-
-    # compute the output probability dist and sample
-    logit_lstm = get_layer('ff')[1](tparams, next_state, options,
-                                    prefix='ff_logit_lstm', activ='linear')
-
-
-    logit_prev = get_layer('ff')[1](tparams, emb, options,
-                                    prefix='ff_logit_prev', activ='linear')
-
-
-    logit = tensor.tanh(logit_lstm + logit_prev)
-    logit = get_layer('ff')[1](tparams, logit, options,
-                               prefix='ff_logit', activ='linear')
-
-    next_probs = tensor.nnet.softmax(logit)
-    next_sample = trng.multinomial(pvals=next_probs).argmax(1)
-
-    # next word probability
-    print 'Building f_next..',
-    inps = [y, init_state]
-    outs = [next_probs, next_sample, next_state]
-    f_next = theano.function(inps, outs, name='f_next', profile=profile)
-    print 'Done'
-
-    return f_next, logit, next_state
-
+    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h
