@@ -287,7 +287,7 @@ def train(worker, model_options, data_options,
     discriminator_target = tensor.ivector()
 
     d = discriminator(num_hidden = 2048,
-                      num_features = 1024 * 3 + 620,
+                      num_features = 1024 + 620,
                       seq_length = 30, mb_size = 64,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
@@ -320,7 +320,7 @@ def train(worker, model_options, data_options,
         if not (key in ['ff_logit_W', 'ff_logit_b'] ):
             tparams_gen.append(tparams[key])
 
-
+    '''
     generator_loss = tensor.mean(-1.0 * d.loss * (1.0 - discriminator_target))
     generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
                                                  tparams_gen, learning_rate = 0.0001,
@@ -329,20 +329,33 @@ def train(worker, model_options, data_options,
     discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
                                                      d.params, learning_rate = 0.0001,
                                                      beta1 = 0.5)
+    '''
+    generator_gan_updates = lasagne.updates.adam(tensor.cast(d.g_cost, 'float32'),
+                                                 tparams_gen, learning_rate = 0.0001,
+                                                 beta1 = 0.5)
+
+    discriminator_gan_updates = lasagne.updates.adam(d.d_cost,
+                                                     d.params, learning_rate = 0.0001,
+                                                     beta1 = 0.5)
+
+
 
     train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {'accuracy' : d.accuracy,
                                                      'classification' : d.classification,
-                                                     'loss': d.loss},
+                                                     'loss': d.loss,
+                                                     'd_cost': d.d_cost,
+                                                     'g_cost': d.g_cost},
                                           updates = discriminator_gan_updates)
 
     train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                       outputs = {'accuracy' : d.accuracy,
                                                  'classification' : d.classification,
-                                                 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
-                                                 'loss': d.loss,
-                                                 'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
+                                                 'loss': d.loss},
                                       updates = generator_gan_updates)
+
+    # 'g_loss' : tensor.grad(generator_loss, tparams.values()[0])})
+    # 'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
 
     for eidx in xrange(max_epochs):
         n_samples = 0
@@ -507,6 +520,17 @@ def train(worker, model_options, data_options,
                                  'Discriminator_Loss':results_map['loss'] })
                     else:
                         print "Just training discriminator"
+                        hidden_features = numpy.concatenate([generated_hidden_state, real_hidden_state], axis=1);
+                        classification_scores = d.get_matrix(hidden_features)
+                        print len(classification_scores)
+                        print len(classification_scores[0])
+                        results_map = train_discriminator(x, x_mask,
+                                                 bern_dist.astype('float32'),
+                                                 uniform_sampling.astype('float32'),
+                                                 genx, genx_mask, bern_dist.astype('float32'),
+                                                 uniform_sampling.astype('float32'), target)
+                        print results_map['d_cost']
+                        print results_map['g_cost']
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'),
@@ -677,7 +701,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=8567)
+    worker = Worker(control_port=4567)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

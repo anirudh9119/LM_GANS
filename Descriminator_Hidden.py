@@ -16,6 +16,9 @@ from layers import param_init_gru, gru_layer
 from utils import init_tparams
 from ConvolutionalLayer import ConvPoolLayer
 
+bce = T.nnet.binary_crossentropy
+
+
 '''
 -Build a discriminator.
 -Each time we train, use 1 for "real" and 0 for "sample".
@@ -100,10 +103,39 @@ class discriminator:
         #raw_y = h_out_4_value
         raw_y = T.clip(h_out_4_value, -20.0, 20.0)
         classification = T.nnet.sigmoid(raw_y)
+
         self.get_matrix = theano.function(inputs=[hidden_state_features],
-                                          outputs=[h_out_4_value])
+                                          outputs=[classification])
 
         self.loss = -1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten()))))
+        p_real =  classification[0:32]
+        p_gen  = classification[32:64]
+
+        self.d_cost_real = bce(p_real, T.ones(p_real.shape)).mean()
+        self.d_cost_gen = bce(p_gen, T.zeros(p_gen.shape)).mean()
+        self.g_cost_d = bce(p_gen, T.ones(p_gen.shape)).mean()
+        self.d_cost = self.d_cost_real + self.d_cost_gen
+        self.g_cost = self.g_cost_d
+
+        '''
+        gX = gen(Z, *gen_params)
+
+        p_real = discrim(X, *discrim_params)
+        p_gen = discrim(gX, *discrim_params)
+
+        d_cost_real = bce(p_real, T.ones(p_real.shape)).mean()
+        d_cost_gen = bce(p_gen, T.zeros(p_gen.shape)).mean()
+        g_cost_d = bce(p_gen, T.ones(p_gen.shape)).mean()
+
+        d_cost = d_cost_real + d_cost_gen
+        g_cost = g_cost_d
+
+        cost = [g_cost, d_cost, g_cost_d, d_cost_real, d_cost_gen]
+        d_updates = d_updater(discrim_params, d_cost)
+        g_updates = g_updater(gen_params, g_cost)
+
+        '''
+
 
 
         self.classification = classification
