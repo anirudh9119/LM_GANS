@@ -15,6 +15,7 @@ from data_iterator import TextIterator
 from utils import  load_params, itemlist, init_tparams
 import optimizers
 
+from lm_discriminator import  build_GAN_model, save_params
 
 from lm_base import (init_params, build_model, build_sampler,
                      gen_sample)
@@ -35,7 +36,7 @@ def train(dim_word=100,  # word vector dimensionality
           optimizer='rmsprop',
           batch_size=16,
           valid_batch_size=16,
-          saveto='model.npz',
+          saveto='/Tmp/anirudhg/LM_GANS/pbt_models/1459958720.model.npz',
           validFreq=1000,
           saveFreq=1000,  # save the parameters after every saveFreq updates
           sampleFreq=100,  # generate some samples after every sampleFreq
@@ -43,7 +44,7 @@ def train(dim_word=100,  # word vector dimensionality
           valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
           dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
           use_dropout=False,
-          reload_=False):
+          reload_=True):
 
     # Model options
     model_options = locals().copy()
@@ -58,9 +59,9 @@ def train(dim_word=100,  # word vector dimensionality
         worddicts_r[vv] = kk
 
     # reload options
-    if reload_ and os.path.exists(saveto):
-        with open('%s.pkl' % saveto, 'rb') as f:
-            model_options = pkl.load(f)
+    #if reload_ and os.path.exists(saveto):
+    #    with open('%s.pkl' % saveto, 'rb') as f:
+    #        model_options = pkl.load(f)
 
     print 'Loading data'
     train = TextIterator(dataset,
@@ -85,12 +86,14 @@ def train(dim_word=100,  # word vector dimensionality
     tparams = init_tparams(params)
 
     # build the symbolic computational graph
-    trng, use_noise, \
-        x, x_mask, \
-        opt_ret, \
-        cost = \
-        build_model(tparams, model_options)
-    inps = [x, x_mask]
+    trng, use_noise,\
+        x, x_mask,\
+        opt_ret,\
+        cost,\
+        bern_dist,\
+        uniform_sampling,\
+        hidden_states, emb_obs, get_hidden = build_GAN_model(tparams, model_options)
+    inps = [x, x_mask, bern_dist, uniform_sampling]
 
     print 'Buliding sampler'
     f_next = build_sampler(tparams, model_options, trng)
@@ -148,7 +151,7 @@ def train(dim_word=100,  # word vector dimensionality
     # Training loop
     # generate some samples with the model and display them
     for jj in xrange(100000):
-        sample, score = gen_sample(tparams, f_next,
+        sample, score, av = gen_sample(tparams, f_next,
                                    model_options, trng=trng,
                                    maxlen=30, argmax=False)
         print 'Sample ', jj, ': ',

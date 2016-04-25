@@ -58,7 +58,6 @@ class discriminator:
         h_out_2 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((mb_size, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((mb_size, num_hidden), num_units = 1, nonlinearity=None)
-        '''
         # 3692, 1844,920, 458
         # (30, 64, 3692)
         # 1644, 820, 408, 202
@@ -82,32 +81,36 @@ class discriminator:
         c3o = c3.output(c2o)
 
         final_out_conv = T.mean(c3o, axis = 0)
+        '''
 
         '''
         h_out_1 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((64, 458), num_units = 458, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_4 = DenseLayer((64, 458), num_units = 1, nonlinearity=None)
+        # h_out_1_value = h_out_1.get_output_for(T.concatenate([final_out_recc, final_out_conv], axis = 1))
         '''
-        h_out_1 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_2 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_3 = DenseLayer((64, 2250), num_units = 2250, nonlinearity=lasagne.nonlinearities.rectify)
-        h_out_4 = DenseLayer((64, 2250), num_units = 1, nonlinearity=None)
+        h_out_1 = DenseLayer((64, 2048), num_units = 2048, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_2 = DenseLayer((64, 2048), num_units = 2048, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_3 = DenseLayer((64, 2048), num_units = 2048, nonlinearity=lasagne.nonlinearities.rectify)
+        h_out_4 = DenseLayer((64, 2048), num_units = 1, nonlinearity=None)
 
-        h_out_1_value = h_out_1.get_output_for(T.concatenate([final_out_recc, final_out_conv], axis = 1))
+
+        h_out_1_value = h_out_1.get_output_for(final_out_recc)
         h_out_2_value = h_out_2.get_output_for(h_out_1_value)
         h_out_3_value = h_out_3.get_output_for(h_out_2_value)
         h_out_4_value = h_out_4.get_output_for(h_out_3_value)
 
 
-        #raw_y = h_out_4_value
-        raw_y = T.clip(h_out_4_value, -20.0, 20.0)
+        raw_y = T.clip(h_out_4_value, -10.0, 10.0)
+
         classification = T.nnet.sigmoid(raw_y)
 
         self.get_matrix = theano.function(inputs=[hidden_state_features],
                                           outputs=[classification])
 
-        self.loss = -1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) + (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten()))))
+        self.loss = -1.0 * (target * -1.0 * T.log(1 + T.exp(-1.0*raw_y.flatten())) +
+                                                 (1 - target) * (-raw_y.flatten() - T.log(1 + T.exp(-raw_y.flatten()))))
         p_real =  classification[0:32]
         p_gen  = classification[32:64]
 
@@ -116,6 +119,9 @@ class discriminator:
         self.g_cost_d = bce(p_gen, T.ones(p_gen.shape)).mean()
         self.d_cost = self.d_cost_real + self.d_cost_gen
         self.g_cost = self.g_cost_d
+
+
+
 
         '''
         gX = gen(Z, *gen_params)
@@ -153,6 +159,7 @@ class discriminator:
         self.params += gru_params_2.values()
         self.params += gru_params_3.values()
 
+        '''
         layerParams = c1.getParams()
         for paramKey in layerParams:
             self.params += [layerParams[paramKey]]
@@ -163,7 +170,7 @@ class discriminator:
         for paramKey in layerParams:
             self.params += [layerParams[paramKey]]
 
-
+        '''
 
         #all_grads = T.grad(self.loss, self.params)
         #for j in range(0, len(all_grads)):

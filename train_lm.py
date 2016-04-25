@@ -1,5 +1,5 @@
-from lm_worker import train
-#from lm_gen import train
+#from lm_worker import train
+from lm_gen import train
 
 #reload true for lm_gen and
 #relaod False for lm_worker
@@ -23,18 +23,16 @@ def main(job_id, params):
         dispFreq=10,
         saveFreq=1000,
         sampleFreq=10,
-        dataset='wiki_small.txt.gz',
-        #dataset='/data/lisatmp3/chokyun/wikipedia/extracted/wiki.tok.txt.gz',
-        valid_dataset='/data/lisatmp4/anirudhg/newstest2011.en.tok',
-        dictionary='/data/lisatmp4/anirudhg/wiki.tok.txt.gz.pkl',
-        use_dropout=params['use-dropout'][0],
-        train_generator_flag=params['train_generator_flag'][0])
+        dataset='/data/lisatmp4/anirudhg/ptb/train.txt',
+        valid_dataset='/data/lisatmp4/anirudhg/ptb/valid.txt',
+        dictionary='/data/lisatmp4/anirudhg/ptb/dictionary_pbt.pkl',
+        use_dropout=params['use-dropout'][0])
     return validerr
 
 if __name__ == '__main__':
     main(0, {
-        'model': ['./models/model_lm_nogan.npz'],
-        'dim_word': [512],
+        'model': ['/Tmp/anirudhg/LM_GANS/pbt_models/1459958720.model.npz'],
+        'dim_word': [620],
         'dim': [1024],
         'n-words': [30000],
         'optimizer': ['adadelta'],

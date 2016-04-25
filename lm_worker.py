@@ -1,16 +1,11 @@
 '''
 Build a simple neural language model using GRU units
-
 So on each time you have a matrix of probabilities, p
 p is a 64 x 30k matrix if we have 64 examples and 30k words
-
 your other input is the word embeddings
 either for the discriminator on the generator on the next step
 your op should sample from a multinomial correspond to p,
 grab the right word embeddings, and return them
-
-
-
 '''
 import logging
 import theano
@@ -140,7 +135,12 @@ def train(worker, model_options, data_options,
           save_tsne,
           flag_save_tsne,
           use_gan_objective,
-          model_name):
+          model_name,
+          beta1,
+          beta2,
+          learning_rate,
+          limit_desc_start,
+          limit_desc_end):
 
     LOGGER.info('Connecting to data socket ({}) and loading validation data'
                     .format(batch_port))
@@ -295,7 +295,6 @@ def train(worker, model_options, data_options,
         -Get two update functions:
           -Update generator wrt. disc.
           -Update discriminator wrt. generator outputs and real outputs.
-
         -Use the same inputs for both.
     '''
 
@@ -322,19 +321,18 @@ def train(worker, model_options, data_options,
         generator_gan_updates = lasagne.updates.adam(tensor.cast(generator_loss, 'float32'),
                                                  tparams_gen, learning_rate = 0.0001,
                                                  beta1 = 0.5)
-
         discriminator_gan_updates = lasagne.updates.adam(tensor.mean(d.loss),
                                                          d.params, learning_rate = 0.0001,
                                                          beta1 = 0.5)
         '''
 
         generator_gan_updates = lasagne.updates.adam(tensor.cast(d.g_cost, 'float32'),
-                                                  tparams_gen, learning_rate = 0.0001,
-                                                  beta1 = 0.5)
+                                                  tparams_gen, learning_rate,
+                                                  beta1)
 
         discriminator_gan_updates = lasagne.updates.adam(d.d_cost,
-                                                      d.params, learning_rate = 0.0001,
-                                                      beta1 = 0.5)
+                                                      d.params, learning_rate,
+                                                      beta2)
 
         train_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                               outputs = {
@@ -356,9 +354,10 @@ def train(worker, model_options, data_options,
                                                     },
                                           updates = generator_gan_updates)
 
-#'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))),
-#'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
+#'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))#'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
 
+
+    teacher_forcing_cost = 0
     for eidx in xrange(max_epochs):
         n_samples = 0
 
@@ -379,7 +378,6 @@ def train(worker, model_options, data_options,
             bern_dist = numpy.random.binomial(1, .5, size=x.shape)
             uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
-            #TODO: change hardcoded 32 to mb size
             ud_start = time.time()
 
             log_entry['x_shape_before_grad'] =  x.shape
@@ -394,6 +392,7 @@ def train(worker, model_options, data_options,
                                            bern_dist.astype('float32'),
                                            uniform_sampling.astype('float32'))
 
+
             #Taking the last hidden state
             real_hidden_state = real_hidden_state[0]
             real_hidden = real_hidden_state[:][maxlen - 1]
@@ -403,6 +402,7 @@ def train(worker, model_options, data_options,
             ud = time.time() - ud_start
             log_entry['update_time'] = ud
             log_entry['cost'] = float(cost)
+            teacher_forcing_cost = float(cost)
             log_entry['average_source_length'] = \
                                          float(x_mask.sum(0).mean())
 
@@ -496,7 +496,7 @@ def train(worker, model_options, data_options,
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
-                    if train_generator_flag and discriminator_accuracy_moving_average > 0.80:
+                    if train_generator_flag and discriminator_accuracy_moving_average > limit_desc_end:
                         print "Training generator"
                         results_map = train_generator(x, x_mask,
                                                       bern_dist.astype('float32'),
@@ -504,13 +504,15 @@ def train(worker, model_options, data_options,
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
+                        gen_loss = results_map['g_cost']
+                        disc_loss = results_map['d_cost']
                         log.log({'update type' : "generator",
-                                  'Generator_Loss': results_map['g_cost'],
-                                  'Discriminator_Loss':results_map['d_cost'] })
+                                 'Generator_Loss': gen_loss,
+                                 'Discriminator_Loss': disc_loss})
 
 
 
-                    elif train_generator_flag and discriminator_accuracy_moving_average > 0.70:
+                    elif train_generator_flag and discriminator_accuracy_moving_average > limit_desc_start:
                         print "Training discriminator and generator"
                         results_map = train_discriminator(x, x_mask,
                                                           bern_dist.astype('float32'),
@@ -523,10 +525,11 @@ def train(worker, model_options, data_options,
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'), target)
-
+                        gen_loss = results_map['g_cost']
+                        disc_loss = results_map['d_cost']
                         log.log({'update type' : "discriminator and generator",
-                                  'Generator_Loss': results_map['g_cost'],
-                                  'Discriminator_Loss':results_map['d_cost'] })
+                                  'Generator_Loss': gen_loss,
+                                  'Discriminator_Loss': disc_loss})
 
                     else:
                         print "Just training discriminator"
@@ -535,19 +538,32 @@ def train(worker, model_options, data_options,
                                                           uniform_sampling.astype('float32'),
                                                           genx, genx_mask, bern_dist.astype('float32'),
                                                           uniform_sampling.astype('float32'), target)
-                        log.log({'update type' : "discriminator",
-                                 'Generator_Loss': results_map['g_cost'],
-                                 'Discriminator_Loss':results_map['d_cost'] })
+                        gen_loss = float(results_map['g_cost'])
+                        disc_loss = float(results_map['d_cost'])
+                        log.log({'Epoch': eidx,
+                                 'Iteration Number': uidx,
+                                 'update type' : "discriminator",
+                                 'Generator_Loss': gen_loss,
+                                 'Discriminator_Loss': disc_loss})
 
+                    desc_accuracy = float(results_map['accuracy'])
                     single_gen_disc_update =  time.time() - t0
+                    gen_loss = float(results_map['g_cost'])
+                    disc_loss = float(results_map['d_cost'])
                     c = results_map['classification'].flatten()
                     log.log({'single_gen_disc_update': single_gen_disc_update,
-                             'Discriminator_Accuracy': results_map['accuracy'],
+                             'Discriminator_Accuracy': desc_accuracy,
+                             'Generator_Loss': gen_loss,
+                             'Discriminator_Loss': disc_loss,
+                             'Epoch': eidx,
+                             'Teacher_forcing_cost': teacher_forcing_cost,
+                             'Iteration_Number': uidx,
                              'Mean scores (first should be higher than second)' : (c[:32].mean(), c[32:].mean())})
 
 
-                    discriminator_accuracy_moving_average = discriminator_accuracy_moving_average * 0.99 + results_map['accuracy'] * 0.01
 
+
+                    discriminator_accuracy_moving_average = discriminator_accuracy_moving_average * 0.99 + results_map['accuracy'] * 0.01
 
                     print "================================================================================================================="
                     print "Discriminator accuracy", results_map['accuracy']
@@ -700,7 +716,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=2567)
+    worker = Worker(control_port=3567)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

@@ -4,13 +4,13 @@
     "decay_c": 0,
     "patience": 100,
     "finish_after": 10000000,
-    "lrate": 0.000001,
+    "lrate": 0.00001,
     "max_epochs": 5000
   },
   "multi": {
-    "control_port": 5567,
-    "batch_port": 5568,
-    "log_port": 5569
+    "control_port": 4567,
+    "batch_port": 4568,
+    "log_port": 4569
   },
   "management": {
     "sampleFreq": 1,

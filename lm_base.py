@@ -239,7 +239,7 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
     return sample, sample_score, np.vstack(next_state_lst)
 
 # calculate the log probablities on a given corpus using language model
-def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
+def pred_probs(f_log_probs, prepare_data, options, iterator, maxlen, verbose=True):
     probs = []
 
     n_done = 0
@@ -247,7 +247,8 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
     for x in iterator:
         n_done += len(x)
 
-        x, x_mask = prepare_data(x, maxlen=30, n_words=30000)
+        x, x_mask = prepare_data(x, maxlen=maxlen, n_words=50)
+        avg_len = float(x_mask.sum(0).mean())
         if x is None:
             print 'Minibatch with zero sample under length, in pred_probs'
             continue
@@ -264,6 +265,6 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, verbose=True):
         if verbose:
             print >>sys.stderr, '%d samples computed' % (n_done)
 
-    return numpy.array(probs)
+    return numpy.array(probs), avg_len
 
 

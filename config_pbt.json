@@ -1,47 +1,52 @@
 {
   "training": {
-    "optimizer": "adadelta",
+    "optimizer": "adam",
     "decay_c": 0,
     "patience": 100,
     "finish_after": 10000000,
-    "lrate": 0.0001,
+    "lrate": 0.002,
     "max_epochs": 5000
   },
   "multi": {
-    "control_port": 5567,
-    "batch_port": 5568,
-    "log_port": 5569
+    "control_port": 4567,
+    "batch_port": 4568,
+    "log_port": 4569
   },
   "management": {
     "sampleFreq": 1,
     "validFreq": 500,
-    "saveto": "/Tmp/anirudhg/LM_GANS/pbt_models/",
+    "saveto": "/Tmp/anirudhg/LM_GANS/pbt_char_models/",
     "reload_": false,
-    "dispFreq": 1000,
-    "saveFreq": 1000
+    "dispFreq": 500,
+    "saveFreq": 500
   },
   "data": {
     "dataset": "/data/lisatmp4/anirudhg/ptb/train.txt",
     "valid_dataset": "/data/lisatmp4/anirudhg/ptb/valid.txt",
-    "dictionary": "/data/lisatmp4/anirudhg/ptb/dictionary_pbt.pkl",
+    "dictionary": "/data/lisatmp4/anirudhg/ptb/char2.npz",
     "batch_size": 32,
-    "n_words": 30000,
+    "n_words": 50,
     "valid_batch_size": 32,
-    "maxlen": 30,
+    "maxlen": 300,
     "minlen": 0 
   },
   "model": {
     "dim": 1024,
     "use_dropout": false,
-    "dim_word": 620,
+    "dim_word": 1024,
     "use_dropout": false,
     "encoder": "gru",
-    "n_words": 30000,
-    "train_generator_flag": true,
+    "n_words": 50,
+    "train_generator_flag": false,
     "flag_save_tsne": false,
-    "use_gan_objective": true,
+    "use_gan_objective": false,
     "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_without_gan",
-    "model_name": "mulitple_hidden_states_without_gan"
+    "model_name": "mulitple_hidden_states_without_gan",
+    "beta1" : 0.9,
+    "beta2" : 0.5,
+    "learning_rate": 0.0001,
+    "limit_desc_start": 0.70,
+    "limit_desc_end": 0.90
   }
 
 }
