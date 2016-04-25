@@ -236,8 +236,7 @@ def train(worker, model_options, data_options,
 
 
     LOGGER.info('Building sampler')
-    f_next = build_sampler(tparams, model_options, trng)
-
+    f_next = build_sampler(tparams, model_options, trng, 3.0)
 
     # before any regularizer
     LOGGER.info('Building f_log_probs')
@@ -648,12 +647,15 @@ def train(worker, model_options, data_options,
                 if numpy.isnan(valid_err):
                     ipdb.set_trace()
 
+                valid_bpc = (valid_err * 1.44)/avg_len
+
                 log.log({'Valid_Err': valid_err,
-                         'Avg_Len':avg_len})
+                    'Avg_Len':avg_len, 'Valid_bpc' : valid_bpc})
 
                 print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
                 print ""
                 print "Validation Error Computed", valid_err
+                print "Validation BPC", valid_bpc
                 print ""
                 print "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
@@ -685,7 +687,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=4567)
+    worker = Worker(control_port=3568)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))
