@@ -53,7 +53,7 @@ class LMController(Controller):
         self._stop = False
 
         self.experiment_id = experiment_id
-        ServerLogger(filename='/Tmp/anirudhg/LM_GANS/pbt_char_logs/{}.log.jsonl.gz'.format(self.experiment_id),
+        ServerLogger(filename='/u/lambalex/logs/pbt_char_logs/{}.log.jsonl.gz'.format(self.experiment_id),
                      threaded=True, port=config['multi']['log_port'], formatter = None)
 
 
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     #num_workers = int(sys.argv[2])
     # Create unique experiment ID and backup config file
     experiment_id = str(int(time.time()))#binascii.hexlify(os.urandom(3)).decode()
-    shutil.copyfile(sys.argv[1], '/Tmp/anirudhg/LM_GANS/pbt_char_logs/{}.config.json'.format(experiment_id))
+    shutil.copyfile(sys.argv[1], '/u/lambalex/logs/pbt_char_logs/{}.config.json'.format(experiment_id))
     # Start controller
     l = LMController(experiment_id, config)
     l.start_batch_server()

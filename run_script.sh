@@ -1,3 +1,3 @@
-python lm_controller.py config.json &
-python lm_worker.py &
+python lm_controller.py config_pbt.json &
+python lm_char_worker.py &
 

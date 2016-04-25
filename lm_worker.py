@@ -223,8 +223,8 @@ def train(worker, model_options, data_options,
 
 
     LOGGER.info('Building sampler')
-    f_next = build_sampler(tparams, model_options, trng)
-
+    biased_sampling_term = 4.0
+    f_next = build_sampler(tparams, model_options, trng, biased_sampling_term)
 
     # before any regularizer
     LOGGER.info('Building f_log_probs')
@@ -716,7 +716,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=3567)
+    worker = Worker(control_port=3568)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

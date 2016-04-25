@@ -8,14 +8,14 @@
     "max_epochs": 5000
   },
   "multi": {
-    "control_port": 4567,
-    "batch_port": 4568,
-    "log_port": 4569
+    "control_port": 3568,
+    "batch_port": 5568,
+    "log_port": 5569
   },
   "management": {
     "sampleFreq": 1,
     "validFreq": 500,
-    "saveto": "/Tmp/anirudhg/LM_GANS/pbt_char_models/",
+    "saveto": "/u/lambalex/logs/pbt_char_logs/",
     "reload_": false,
     "dispFreq": 500,
     "saveFreq": 500
@@ -37,9 +37,9 @@
     "use_dropout": false,
     "encoder": "gru",
     "n_words": 50,
-    "train_generator_flag": false,
+    "train_generator_flag":true,
     "flag_save_tsne": false,
-    "use_gan_objective": false,
+    "use_gan_objective": true,
     "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_without_gan",
     "model_name": "mulitple_hidden_states_without_gan",
     "beta1" : 0.9,

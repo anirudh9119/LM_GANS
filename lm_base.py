@@ -151,7 +151,7 @@ def build_model(tparams, options):
 
 
 # build a sampler
-def build_sampler(tparams, options, trng):
+def build_sampler(tparams, options, trng,biased_sampling_term):
     # x: 1 x 1
     y = tensor.vector('y_sampler', dtype='int64')
     init_state = tensor.matrix('init_state', dtype='float32')
@@ -195,7 +195,7 @@ def build_sampler(tparams, options, trng):
 
     logit = get_layer('ff')[1](tparams, logit, options,
                                prefix='ff_logit', activ='linear')
-    next_probs = tensor.nnet.softmax(logit)
+    next_probs = tensor.nnet.softmax(logit * biased_sampling_term)
     next_sample = trng.multinomial(pvals=next_probs).argmax(1)
 
     # next word probability
