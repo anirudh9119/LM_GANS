@@ -94,6 +94,7 @@ def init_params(options):
                                 nout=options['n_words'])
 
 
+    params['initial_hidden_state_0'] = np.zeros(shape = (1, options['dim'])).astype('float32')
 
     return params
 
@@ -147,7 +148,7 @@ def build_model(tparams, options):
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
 
-    return trng, use_noise, x, x_mask, opt_ret, cost
+    return trng, use_noise, x, x_mask, opt_ret, cost, probs
 
 
 # build a sampler
@@ -209,6 +210,44 @@ def build_sampler(tparams, options, trng,biased_sampling_term):
 
 
 # generate sample
+def gen_sample_batch(tparams, f_next, options, trng=None, maxlen=30, argmax=False, batch_size = 32, initial_state = None):
+
+    sample = []
+    sample_score = 0
+
+    # initial token is indicated by a -1 and initial state is zero
+    next_w = -1 * numpy.ones((batch_size,)).astype('int64')
+    if initial_state == None:
+        next_state = numpy.zeros((batch_size, 3 * options['dim'])).astype('float32')
+    else:
+        next_state = np.vstack([initial_state] * 32)
+        print "next state shape", next_state.shape
+
+    next_state_lst = []
+
+    for ii in xrange(maxlen):
+        inps = [next_w, next_state]
+        ret = f_next(*inps)
+        next_p, next_w, next_state = ret[0], ret[1], ret[2]
+
+        next_state_lst += [next_state]
+
+        sample.append(next_w)
+
+        #sample.append(nw)
+        #sample_score += next_p[0, nw]
+        
+
+        
+        #if nw == 0:
+        #    break
+
+    sample_return = np.asarray(sample).T.tolist()
+
+    return sample_return, 0.0, 0.0
+
+
+# generate sample
 def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
 
     sample = []
@@ -255,6 +294,11 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, maxlen, verbose=Tru
 
         bern_dist = numpy.random.binomial(1, .5, size=x.shape)
         uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
+
+        print x.shape
+        if x.shape[1] != 32:
+            continue
+
         pprobs = f_log_probs(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))
         for pp in pprobs:
             probs.append(pp)

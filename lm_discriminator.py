@@ -52,10 +52,17 @@ def build_GAN_model(tparams, options):
     emb = emb_shifted
     opt_ret['emb'] = emb
 
+    print "embedding dim", emb.ndim
+
+    initial_state_reshaped = tensor.concatenate([tparams['initial_hidden_state_0']] * 32, axis = 0)
+
     # pass through gru layer, recurrence here
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
-                                            mask=x_mask)
+                                            mask=x_mask, init_state = initial_state_reshaped)
+
+    print "gru layer 1 dim", proj[0].ndim
+
     '''
     proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
                                             prefix='encoder_1',
@@ -84,18 +91,22 @@ def build_GAN_model(tparams, options):
 
     logit = get_layer('ff')[1](tparams, logit_init, options, prefix='ff_logit',
                                activ='linear')
+
+    
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(
         logit.reshape([logit_shp[0]*logit_shp[1], logit_shp[2]]))
 
+
     # cost
     x_flat = x.flatten()
     x_flat_idx = tensor.arange(x_flat.shape[0]) * options['n_words'] + x_flat
+
+
     cost = -tensor.log(probs.flatten()[x_flat_idx])
     cost = cost.reshape([x.shape[0], x.shape[1]])
     opt_ret['cost_per_sample'] = cost
     cost = (cost * x_mask).sum(0)
-
 
 
     #get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat])
@@ -103,4 +114,6 @@ def build_GAN_model(tparams, options):
     states_concat_disc = tensor.concatenate([proj[0],  logit_init], axis = 2)
     get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat_disc])
 
-    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h
+    return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h, probs
+
+

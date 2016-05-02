@@ -24,9 +24,9 @@ def adam(lr, tparams, grads, inp, cost):
 
     f_grad_shared = theano.function(inp, cost, updates=gsup, profile=profile)
 
-    lr0 = 0.0002
-    b1 = 0.1
-    b2 = 0.001
+    lr0 = lr
+    b1 = 0.9
+    b2 = 0.999
     e = 1e-8
 
     updates = []
@@ -35,18 +35,33 @@ def adam(lr, tparams, grads, inp, cost):
     i_t = i + 1.
     fix1 = 1. - b1**(i_t)
     fix2 = 1. - b2**(i_t)
-    lr_t = lr0 * (tensor.sqrt(fix2) / fix1)
+    lr_t = lr0# * (tensor.sqrt(fix2) / fix1)
+
+    g_norm = 0.0
+
+    for g in gshared:
+        print "computing g norm"
+        g_norm += tensor.sum(tensor.sqr(g))
+
+    g_norm = tensor.sqrt(g_norm) + 1.0
 
     for p, g in zip(tparams.values(), gshared):
+    
+        g = g / (1.0 + g_norm)
+
         m = theano.shared(p.get_value() * 0.)
         v = theano.shared(p.get_value() * 0.)
-        m_t = (b1 * g) + ((1. - b1) * m)
-        v_t = (b2 * tensor.sqr(g)) + ((1. - b2) * v)
+        m_t = ((1 - b1) * g) + (b1 * m)
+        v_t = ((1 - b2) * tensor.sqr(g)) + (b2 * v)
         g_t = m_t / (tensor.sqrt(v_t) + e)
-        p_t = p - (lr_t * g_t)
+        step = lr_t * g_t
+
+        p_t = p - step
+
         updates.append((m, m_t))
         updates.append((v, v_t))
         updates.append((p, p_t))
+
     updates.append((i, i_t))
 
     f_update = theano.function([lr],

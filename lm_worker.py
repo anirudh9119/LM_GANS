@@ -356,6 +356,7 @@ def train(worker, model_options, data_options,
 
 #'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))#'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
 
+    t_mb = time.time()
 
     teacher_forcing_cost = 0
     for eidx in xrange(max_epochs):
@@ -365,6 +366,9 @@ def train(worker, model_options, data_options,
             n_samples += len(x)
             uidx += 1
             use_noise.set_value(1.)
+
+            print "Total time in minibatch", time.time() - t_mb
+            t_mb = time.time()
 
             log_entry = {'iteration': uidx}
 
@@ -428,6 +432,7 @@ def train(worker, model_options, data_options,
                     params = unzip(tparams)
                 save_params(params, saveto + model_filename)
 
+            t0_sample = time.time()
             # generate some samples with the model and display them
             if numpy.mod(uidx, sampleFreq) == 0:
 
@@ -490,6 +495,9 @@ def train(worker, model_options, data_options,
                              images, duration=0.5, repeat=False)
                     #plt.savefig(save_tsne + '/' + model_name + '_' + str(uidx) + '.png', dpi=120)
 
+                print "total time to sample", time.time() - t0_sample
+
+                t0 = time.time()
 
                 if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
                     target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
@@ -563,6 +571,8 @@ def train(worker, model_options, data_options,
 
 
 
+                    print "Time to run gan", time.time() - t0
+
                     discriminator_accuracy_moving_average = discriminator_accuracy_moving_average * 0.99 + results_map['accuracy'] * 0.01
 
                     print "================================================================================================================="
@@ -581,9 +591,10 @@ def train(worker, model_options, data_options,
                                 sentence_print += worddicts_r[word_num] + " "
                             else:
                                 sentence_print += "UNK "
-                        log.log({"Real_Sentence" : sentence_print,
-                                 "Real_Sentence_Index" : str(i),
-                                 "Real_Sentence_Accuracy" :str(c[i])})
+                        if random.uniform(0,1) < 0.05:
+                            log.log({"Real_Sentence" : sentence_print,
+                                "Real_Sentence_Index" : str(i),
+                                "Real_Sentence_Accuracy" :str(c[i])})
 
                     for i in range(32, 64):
                         sentence_print = ""

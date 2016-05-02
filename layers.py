@@ -144,6 +144,8 @@ def gru_layer(tparams,
     # set initial state to all zeros
     if init_state is None:
         init_state = tensor.unbroadcast(tensor.alloc(0., n_samples, dim), 0)
+    else:
+        init_state = init_state
 
     if one_step:  # sampling
         rval = _step(*(seqs+[init_state]+shared_vars))

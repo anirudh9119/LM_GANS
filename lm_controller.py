@@ -37,6 +37,8 @@ class LMController(Controller):
             The number of workers (GPUs), used to calculate the alpha
             parameter for EASGD.
         """
+
+
         self.config = config
         LOGGER.info('Setting up controller ({})'
                             .format(config['multi']['control_port']))
@@ -48,6 +50,8 @@ class LMController(Controller):
         self.uidx = 0
         self.bad_counter = 0
         self.min_valid_cost = numpy.inf
+
+        print(config)
 
         self.valid = False
         self._stop = False

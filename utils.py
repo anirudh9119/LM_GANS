@@ -48,6 +48,7 @@ def dropout_layer(state_before, use_noise, trng):
 def init_tparams(params):
     tparams = OrderedDict()
     for kk, pp in six.iteritems(params):
+
         tparams[kk] = theano.shared(params[kk], name=kk)
     return tparams
 
