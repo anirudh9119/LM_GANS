@@ -91,7 +91,6 @@ def build_GAN_model(tparams, options):
 
     logit = get_layer('ff')[1](tparams, logit_init, options, prefix='ff_logit',
                                activ='linear')
-
     
     logit_shp = logit.shape
     probs = tensor.nnet.softmax(
@@ -111,7 +110,9 @@ def build_GAN_model(tparams, options):
 
     #get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat])
     ##states_concat_disc = tensor.concatenate([proj[0], proj_1[0], proj_2[0], logit_init], axis = 2)
-    states_concat_disc = tensor.concatenate([proj[0],  logit_init], axis = 2)
+    states_concat_disc = tensor.concatenate([logit_lstm + logit_prev, logit], axis = 2)
+
+
     get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat_disc])
 
     return trng, use_noise, x, x_mask, opt_ret, cost, bern_dist, uniform_sampling, states_concat_disc, emb, get_proj_h, probs

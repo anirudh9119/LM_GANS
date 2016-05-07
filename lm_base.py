@@ -220,7 +220,7 @@ def gen_sample_batch(tparams, f_next, options, trng=None, maxlen=30, argmax=Fals
     if initial_state == None:
         next_state = numpy.zeros((batch_size, 3 * options['dim'])).astype('float32')
     else:
-        next_state = np.vstack([initial_state] * 32)
+        next_state = np.vstack([initial_state] * batch_size)
         print "next state shape", next_state.shape
 
     next_state_lst = []

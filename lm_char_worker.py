@@ -7,6 +7,7 @@ either for the discriminator on the generator on the next step
 your op should sample from a multinomial correspond to p,
 grab the right word embeddings, and return them
 '''
+from plot import plot_image_grid
 import logging
 import theano
 import theano.tensor as tensor
@@ -14,12 +15,16 @@ import lasagne
 import random
 from PIL import Image
 
+theano.config.scan.allow_gc = True
+
 import cPickle as pkl
 import ipdb
 import numpy
 import copy
 from toolz.dicttoolz import merge
 from images2gif import writeGif
+
+from consider_constant import consider_constant
 
 import sys
 reload(sys)
@@ -37,7 +42,8 @@ from char_data_iterator import TextIterator
 from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
-from Descriminator_Hidden import discriminator
+#from Descriminator_Hidden import discriminator
+from Discriminator_Conv import discriminator
 
 from lm_base import (init_params, build_sampler,gen_sample, gen_sample_batch, pred_probs, prepare_data)
 
@@ -141,16 +147,25 @@ def train(worker, model_options, data_options,
           beta2,
           learning_rate,
           limit_desc_start,
-          limit_desc_end):
+          limit_desc_end,
+          gan_starting_point):
 
     LOGGER.info('Connecting to data socket ({}) and loading validation data'
                     .format(batch_port))
     worker.init_mb_sock(batch_port)
     log = RemoteLogger(port=log_port)
 
+
     experiment_id = worker.send_req('experiment_id')
     model_filename = '{}.model.npz'.format(experiment_id)
     saveto_filename = '{}.npz'.format(saveto)
+
+    try:
+        os.mkdir(saveto + experiment_id)
+    except:
+        pass
+
+    saveto += experiment_id
 
     # Model options
     model_options = locals().copy()
@@ -169,9 +184,10 @@ def train(worker, model_options, data_options,
     #worddicts_r : index -> word.
 '''
     # reload options
-    if reload_ and os.path.exists(saveto):
-        with open('%s.pkl' % saveto, 'rb') as f:
-            model_options = pkl.load(f)
+    #if reload_ and os.path.exists(saveto):
+    #    with open('%s.pkl' % saveto, 'rb') as f:
+    #        model_options = pkl.load(f)
+
 
     LOGGER.info('Loading data')
     import numpy
@@ -201,8 +217,12 @@ def train(worker, model_options, data_options,
     params = init_params(model_options)
 
     # reload parameters
+    #saved_model_loc = "/u/lambalex/logs/mnist/1462399235/1462399235.model.npz"
+    #saved_model_loc = '/u/lambalex/logs/mnist/1462407058/1462407058.model.npz'
+    saved_model_loc = '/u/lambalex/logs/mnist/1462511667/1462511667.model.npz'
+
     if reload_ and os.path.exists(saveto):
-        params = load_params(saveto, params)
+        params = load_params(saved_model_loc, params)
 
     # create shared variables for parameters
     tparams = init_tparams(params)
@@ -224,12 +244,16 @@ def train(worker, model_options, data_options,
         bern_dist_sampled, uniform_sampling_sampled, \
         hidden_states_sampled, emb_sampled, get_hidden_sampled, probs_rf = build_GAN_model(tparams, model_options)
 
+    #MMD score
 
-    # hidden states are minibatch x sequence x feature
-    #TODO: only using hidden states real.
+    #h_tf_mean = tensor.specify_shape(tensor.mean(hidden_states, axis = 1), (785, 1024 + 50))
+    #h_rf_mean = tensor.specify_shape(tensor.mean(hidden_states_sampled, axis = 1), (785, 1024 + 50 + 99))
+    #mmd_score = tensor.mean((h_tf_mean - h_rf_mean)**2)
+
+
+    hidden_states = consider_constant(hidden_states)
 
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
-    #hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
 
     inps = [x, x_mask, bern_dist, uniform_sampling]
     inps_sampled = [x_sampled, x_mask_sampled, bern_dist_sampled, uniform_sampling_sampled]
@@ -280,8 +304,8 @@ def train(worker, model_options, data_options,
 
     history_errs = []
     # reload history
-    if reload_ and os.path.exists(saveto):
-        history_errs = list(numpy.load(saveto)['history_errs'])
+    #if reload_ and os.path.exists(saveto):
+    #    history_errs = list(numpy.load(saveto)['history_errs'])
     best_p = None
     bad_count = 0
 
@@ -299,9 +323,10 @@ def train(worker, model_options, data_options,
 
     discriminator_target = tensor.ivector()
 
-    d = discriminator(num_hidden = 256,
-                      num_features = dim + dim_word,
-                      seq_length = maxlen, mb_size = 64,
+
+    d = discriminator(num_hidden = 2048,
+                      num_features = 512 + 50,
+                      seq_length = maxlen, mb_size = batch_size,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
 
@@ -315,7 +340,7 @@ def train(worker, model_options, data_options,
         -Use the same inputs for both.
     '''
 
-
+    
 
     #target = 1 corresponds to teacher forcing, target = 0 corresponds to sampled sentences.
 
@@ -325,10 +350,7 @@ def train(worker, model_options, data_options,
     if use_gan_objective:
         tparams_gen = []
 
-        for key in tparams.keys():
-        #if not (key in ['ff_logit_lstm_W', 'ff_logit_lstm_b', 'ff_logit_prev_W', 'ff_logit_prev_b', 'ff_logit_W', 'ff_logit_b'] ):
-            if not (key in ['ff_logit_W', 'ff_logit_b']):
-                tparams_gen.append(tparams[key])
+        tparams_gen = tparams.values()
 
         '''
         generator_loss = tensor.mean(-d.loss * (1.0 - discriminator_target))
@@ -340,21 +362,25 @@ def train(worker, model_options, data_options,
                                                          beta1 = 0.5)
         '''
 
-        disc_lr_mult = tensor.scalar()
+        #disc_lr_mult = tensor.scalar()
+        #gen_lr_mult = tensor.scalar()
 
-        generator_gan_updates = lasagne.updates.adam(tensor.cast(d.g_cost + cost, 'float32'),
-                                                  tparams_gen, learning_rate * 10.0,
+        g_grads = lasagne.updates.total_norm_constraint(tensor.grad(tensor.cast(d.g_cost + cost, 'float32'), tparams_gen), 5.0)
+        d_grads = lasagne.updates.total_norm_constraint(tensor.grad(d.d_cost, d.params), 5.0)
+
+        generator_gan_updates = lasagne.updates.adam(g_grads,
+                                                  tparams_gen, learning_rate,
                                                   beta1)
 
-        discriminator_gan_updates = lasagne.updates.adam(d.d_cost,
-                                                      d.params, learning_rate * disc_lr_mult,
+        discriminator_gan_updates = lasagne.updates.adam(d_grads,
+                                                      d.params, learning_rate,
                                                       beta2)
 
         all_updates = generator_gan_updates
         all_updates.update(discriminator_gan_updates)
 
 
-        train_generator_and_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target, disc_lr_mult],
+        train_generator_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
                                           outputs = {
                                                      'accuracy' : d.accuracy,
                                                      'classification' : d.classification,
@@ -380,6 +406,8 @@ def train(worker, model_options, data_options,
             print "total time in minibatch", time.time() - t_mb
             t_mb = time.time()
 
+            print "experiment id directory", saveto
+
             log_entry = {'iteration': uidx}
 
             # pad batch and create mask
@@ -397,9 +425,9 @@ def train(worker, model_options, data_options,
             log_entry['x_shape_before_grad'] =  x.shape
             # compute cost, grads and copy grads to shared variables
 
-            print x.shape
+            print "x shape before grad", x.shape
 
-            if x.shape[1] != 32:
+            if x.shape[1] != batch_size:
                 continue
 
             cost = f_grad_shared(x.astype('int32'),
@@ -417,7 +445,6 @@ def train(worker, model_options, data_options,
             real_hidden_state = real_hidden_state[0]
             real_hidden = real_hidden_state[:][maxlen - 1]
 
-            print "LEARNING RATE", lrate
 
             # do the update on parameters
             f_update(lrate)
@@ -434,6 +461,12 @@ def train(worker, model_options, data_options,
             log.log(log_entry)
 
             print "Number samples processed", n_samples
+            try:
+                cost_ma = cost_ma * 0.99 + cost * 0.01
+            except:
+                cost_ma = cost
+
+            print "Cost Moving Average", cost_ma
             print "Training Likelihood Cost", cost
 
             # check for bad numbers
@@ -450,10 +483,10 @@ def train(worker, model_options, data_options,
                     params = best_p
                 else:
                     params = unzip(tparams)
-                save_params(params, saveto + model_filename)
+                save_params(params, saveto + "/" + model_filename)
 
             # generate some samples with the model and display them
-            if numpy.mod(uidx, sampleFreq) == 0:
+            if numpy.mod(uidx, sampleFreq) == 0 and n_samples > gan_starting_point:
 
                 t0 = time.time()
                 gensample = [];
@@ -463,25 +496,15 @@ def train(worker, model_options, data_options,
 
                 sample_batch, score_batch, nss_batch = gen_sample_batch(tparams, f_next, model_options, trng=trng,maxlen = maxlen, argmax=False, initial_state = tparams['initial_hidden_state_0'].get_value())
 
-                #while 1:
-                    
-                #    sample, score, next_state_sampled = gen_sample(tparams, f_next,
-                #                               model_options, trng=trng,
-                #                               maxlen = maxlen, argmax=False)
-
-                #    print "sample", sample
-
-                #    if True:#if len(sample) >=10  and len(sample) < maxlen:
-                #        count_gen = count_gen + 1
-                #        gensample.append(sample)
-
-                #    if count_gen >= 32:
-                #        break
-
                 gensample = sample_batch
 
-                if random.uniform(0,1) < 1.0:
-                    print "sample", gensample[0]
+                if random.uniform(0,1) < 0.1:
+                    print "saving samples"
+                    gensample_arr = numpy.asarray(gensample)
+                    print "Sample shape", gensample_arr.shape
+                    sample_loc = saveto + "/sample_" + str(n_samples) + ".png"
+                    print "Saving to", sample_loc
+                    plot_image_grid(gensample_arr[:20,:784].reshape((20,1,28,28)), 4, 5, sample_loc)
 
                 sampling_time = time.time() - t0
                 log.log({'Sampling_time': sampling_time})
@@ -489,7 +512,6 @@ def train(worker, model_options, data_options,
 
                 results = prepare_data(gensample, maxlen, n_words)
                 genx, genx_mask = results[0], results[1]
-
 
                 if genx is None:
                     log.log({'Minibatch with zero sample under length ' : maxlen})
@@ -530,48 +552,33 @@ def train(worker, model_options, data_options,
 
                 t0_gan = time.time()
 
-                if use_gan_objective and x.shape[1] == 32 and genx.shape[1] == 32:
-                    target = numpy.asarray(([1] * 32) + ([0] * 32)).astype('int32')
+                if use_gan_objective and x.shape[1] == batch_size and genx.shape[1] == batch_size:
+                    target = numpy.asarray(([1] * batch_size) + ([0] * batch_size)).astype('int32')
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
                     if False and train_generator_flag and discriminator_accuracy_moving_average > limit_desc_end:
                         train_msg = "Training generator"
-                        #results_map = train_generator(x, x_mask,
-                        #                              bern_dist.astype('float32'),
-                        #                              uniform_sampling.astype('float32'),
-                        #                              genx, genx_mask,
-                        #                              bern_dist.astype('float32'),
-                        #                              uniform_sampling.astype('float32'), target)
-                        #gen_loss = results_map['g_cost']
-                        #disc_loss = results_map['d_cost']
-                        #log.log({'update type' : "generator",
-                        #         'Generator_Loss': gen_loss,
-                        #         'Discriminator_Loss': disc_loss})
 
 
 
                     elif train_generator_flag and (True or discriminator_accuracy_moving_average > limit_desc_start):
-                        train_msg = "Training discriminator and generator"
-                        #results_map = train_discriminator(x, x_mask,
-                        #                                  bern_dist.astype('float32'),
-                        #                                  uniform_sampling.astype('float32'),
-                        #                                  genx, genx_mask, bern_dist.astype('float32'),
-                        #                                  uniform_sampling.astype('float32'), target)
 
                         t0 = time.time()
 
-                        if discriminator_accuracy_moving_average > 0.8:
-                            disc_lr_mult = numpy.asarray(0.0).astype('float32')
-                        else:
-                            disc_lr_mult = numpy.asarray(1.0).astype('float32')
+                        train_msg = "Training discriminator and generator"
+                        disc_lr_mult = numpy.asarray(1.0).astype('float32')
+                        gen_lr_mult = numpy.asarray(1.0).astype('float32')
 
-                        results_map = train_generator_and_discriminator(x, x_mask, bern_dist.astype('float32'),
+                        results_map = train_generator_discriminator(x, x_mask, bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
                                                       genx, genx_mask,
                                                       bern_dist.astype('float32'),
-                                                      uniform_sampling.astype('float32'), target, disc_lr_mult)
-                        print "time to update GAN", time.time() - t0
+                                                      uniform_sampling.astype('float32'), target)
+
+
+
+
                         gen_loss = results_map['g_cost']
                         disc_loss = results_map['d_cost']
                         log.log({'update type' : "discriminator and generator",
@@ -599,6 +606,9 @@ def train(worker, model_options, data_options,
                     gen_loss = float(results_map['g_cost'])
                     disc_loss = float(results_map['d_cost'])
                     c = results_map['classification'].flatten()
+
+                    print "classification shape!", results_map['classification'].shape
+
                     log.log({'single_gen_disc_update': single_gen_disc_update,
                              'Discriminator_Accuracy': desc_accuracy,
                              'Generator_Loss': gen_loss,
@@ -606,7 +616,7 @@ def train(worker, model_options, data_options,
                              'Epoch': eidx,
                              'Teacher_forcing_cost': teacher_forcing_cost,
                              'Iteration_Number': uidx,
-                             'Mean scores (first should be higher than second)' : (c[:32].mean(), c[32:].mean())})
+                             'Mean scores (first should be higher than second)' : (c[:batch_size].mean(), c[batch_size:].mean())})
 
                     print "time for gan objective", time.time() - t0_gan
 
@@ -686,6 +696,7 @@ def train(worker, model_options, data_options,
                 if numpy.isnan(valid_err):
                     ipdb.set_trace()
 
+                
                 valid_bpc = (valid_err * 1.44)/avg_len
 
                 log.log({"Iteration" : uidx, 'Valid_Err': valid_err,
@@ -727,7 +738,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=3568)
+    worker = Worker(control_port=5568)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

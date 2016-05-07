@@ -2,7 +2,7 @@ from __future__ import print_function
 #import binascii
 import io
 import json
-#import os
+import os
 import shutil
 import sys
 import logging
@@ -146,8 +146,16 @@ if __name__ == '__main__':
     #num_workers = int(sys.argv[2])
     # Create unique experiment ID and backup config file
     experiment_id = str(int(time.time()))#binascii.hexlify(os.urandom(3)).decode()
-    shutil.copyfile(sys.argv[1], '/u/lambalex/logs/pbt_char_logs/{}.config.json'.format(experiment_id))
+
+    print("config" + str(config))
+
+    os.mkdir('/u/lambalex/logs/mnist/' + experiment_id)
+
+
+    shutil.copyfile(sys.argv[1], '/u/lambalex/logs/mnist/' + experiment_id + '/config.json')
     # Start controller
     l = LMController(experiment_id, config)
     l.start_batch_server()
     l.serve()
+
+

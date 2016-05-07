@@ -16,7 +16,7 @@ profile = settings.profile
 
 # name(hyperp, tparams, grads, inputs (list), cost) = f_grad_shared, f_update
 
-def adam(lr, tparams, grads, inp, cost):
+def adam(lr, tparams, grads, inp, cost, switch = 1.0):
     gshared = [theano.shared(p.get_value() * 0.,
                              name='%s_grad' % k)
                for k, p in six.iteritems(tparams)]
@@ -58,9 +58,9 @@ def adam(lr, tparams, grads, inp, cost):
 
         p_t = p - step
 
-        updates.append((m, m_t))
-        updates.append((v, v_t))
-        updates.append((p, p_t))
+        updates.append((m, m_t * switch + m * (1-switch)))
+        updates.append((v, v_t * switch + v * (1-switch)))
+        updates.append((p, p_t * switch + p * (1-switch)))
 
     updates.append((i, i_t))
 

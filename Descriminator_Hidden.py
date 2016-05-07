@@ -14,7 +14,7 @@ import lasagne
 
 from layers import param_init_gru, gru_layer
 from utils import init_tparams
-from ConvolutionalLayer import ConvPoolLayer
+from ConvolutionalLayer2D import ConvPoolLayer2D
 
 from HiddenLayer import HiddenLayer
 
@@ -97,6 +97,23 @@ class discriminator:
         h_out_4 = DenseLayer((64, 458), num_units = 1, nonlinearity=None)
         # h_out_1_value = h_out_1.get_output_for(T.concatenate([final_out_recc, final_out_conv], axis = 1))
         '''
+
+        #Shape is 784 x 64 x 2048
+
+        #batch_size x filters x pos1 x pos2
+
+        #c1_in = hidden_state_features.transpose(1,2,0).reshape((64, 2048, 28, 28))[:,:10,:,:]
+
+        #c1 = ConvPoolLayer2D(in_channels = 10, out_channels = 10, kernel_len = 3, stride = 2)
+
+        #c1_out = T.mean(c1.output(c1_in), axis = (2,3))
+
+        #batch_size x filters
+
+        #Goes to 14 x 14 x 64 x 1024
+
+        #Mean pool to 64 x 1024.  Concatenate with h_out_1 input.  
+
         h_out_1 = DenseLayer((64, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_2 = DenseLayer((64, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
         h_out_3 = DenseLayer((64, num_hidden), num_units = num_hidden, nonlinearity=lasagne.nonlinearities.rectify)
@@ -107,12 +124,12 @@ class discriminator:
 
         h_out_4 = DenseLayer((64, num_hidden), num_units = 1, nonlinearity=None)
 
-        h_out_1_value = dropout(h_out_1.get_output_for(final_out_recc))
+        h_out_1_value = dropout(h_out_1.get_output_for(T.concatenate([final_out_recc], axis = 1)))
         h_out_2_value = dropout(h_out_2.get_output_for(h_out_1_value))
         h_out_3_value = dropout(h_out_3.get_output_for(h_out_2_value))
         h_out_4_value = h_out_4.get_output_for(h_out_3_value)
 
-        raw_y = h_out_4_value
+        raw_y = T.clip(h_out_4_value, -10.0, 10.0)
 
         classification = T.nnet.sigmoid(raw_y)
 
@@ -124,33 +141,11 @@ class discriminator:
         p_real =  classification[0:32]
         p_gen  = classification[32:64]
 
-        self.d_cost_real = bce(p_real, T.ones(p_real.shape)).mean()
-        self.d_cost_gen = bce(p_gen, T.zeros(p_gen.shape)).mean()
-        self.g_cost_d = bce(p_gen, T.ones(p_gen.shape)).mean()
+        self.d_cost_real = bce(p_real, 0.9 * T.ones(p_real.shape)).mean()
+        self.d_cost_gen = bce(p_gen, 0.1 + T.zeros(p_gen.shape)).mean()
+        self.g_cost_d = bce(p_gen, 0.9 * T.ones(p_gen.shape)).mean()
         self.d_cost = self.d_cost_real + self.d_cost_gen
         self.g_cost = self.g_cost_d
-
-
-
-
-        '''
-        gX = gen(Z, *gen_params)
-
-        p_real = discrim(X, *discrim_params)
-        p_gen = discrim(gX, *discrim_params)
-
-        d_cost_real = bce(p_real, T.ones(p_real.shape)).mean()
-        d_cost_gen = bce(p_gen, T.zeros(p_gen.shape)).mean()
-        g_cost_d = bce(p_gen, T.ones(p_gen.shape)).mean()
-
-        d_cost = d_cost_real + d_cost_gen
-        g_cost = g_cost_d
-
-        cost = [g_cost, d_cost, g_cost_d, d_cost_real, d_cost_gen]
-        d_updates = d_updater(discrim_params, d_cost)
-        g_updates = g_updater(gen_params, g_cost)
-
-        '''
 
 
 
@@ -162,42 +157,12 @@ class discriminator:
         self.params += lasagne.layers.get_all_params(h_out_2,trainable=True)
         self.params += lasagne.layers.get_all_params(h_out_1,trainable=True)
 
-        #self.params += h_out_1.getParams() + h_out_2.getParams() + h_out_3.getParams()
-
-#        self.params += lasagne.layers.get_all_params(h_initial_1,trainable=True)
-#        self.params += lasagne.layers.get_all_params(h_initial_2,trainable=True)
+        #self.params += c1.getParams().values()
 
         self.params += gru_params_1.values()
         self.params += gru_params_2.values()
         self.params += gru_params_3.values()
 
-        '''
-        layerParams = c1.getParams()
-        for paramKey in layerParams:
-            self.params += [layerParams[paramKey]]
-        layerParams = c2.getParams()
-        for paramKey in layerParams:
-            self.params += [layerParams[paramKey]]
-        layerParams = c3.getParams()
-        for paramKey in layerParams:
-            self.params += [layerParams[paramKey]]
-
-        '''
-
-        #all_grads = T.grad(self.loss, self.params)
-        #for j in range(0, len(all_grads)):
-        #    all_grads[j] = T.switch(T.isnan(all_grads[j]), T.zeros_like(all_grads[j]), all_grads[j])
-        #self.updates = lasagne.updates.adam(all_grads, self.params, learning_rate = 0.0001, beta1 = 0.5)
 
         self.accuracy = T.mean(T.eq(target, T.gt(classification, 0.5).flatten()))
-
-        '''
-        self.train_func = theano.function(inputs = [x, target, use_one_hot_input_flag,
-                                                     one_hot_input, hidden_state_features_discriminator,
-                                                     self.hidden_state_features_generator],
-                                           outputs = {'l' : self.loss,
-                                                      'c' : classification,
-                                                      'accuracy' : T.mean(T.eq(target, T.gt(classification, 0.5).flatten()))},
-                                           updates = updates)
-        '''
 
