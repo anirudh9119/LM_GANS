@@ -1,199 +1,173 @@
+import hashlib
+import numpy as np
 import theano
-from theano import tensor
-import warnings
-import six
-import pickle
-
-import numpy
-import inspect
+import os
+import shutil
 from collections import OrderedDict
 
+import theano.tensor as T
+from theano.tensor.nnet import (binary_crossentropy,
+                                categorical_crossentropy)
 
-# make prefix-appended name
-def _p(pp, name):
-        return '%s_%s' % (pp, name)
-
-# push parameters to Theano shared variables
-def zipp(params, tparams):
-    for kk, vv in six.iteritems(params):
-        tparams[kk].set_value(vv)
-
-
-# pull parameters from Theano shared variables
-def unzip(zipped):
-    new_params = OrderedDict()
-    for kk, vv in six.iteritems(zipped):
-        new_params[kk] = vv.get_value()
-    return new_params
+from fuel.streams import DataStream
+from fuel.transformers import (Mapping, ForceFloatX, Padding,
+                               SortMapping, Cast)
+from fuel.schemes import ShuffledScheme
+from datasets.schemes import SequentialShuffledScheme
+from datasets.transformers import (MaximumFrameCache, Transpose, Normalize,
+                                   AddUniformAlignmentMask, WindowFeatures,
+                                   Reshape, AlignmentPadding, Subsample,
+                                   ConvReshape)
 
 
-# get the list of parameters: Note that tparams must be OrderedDict
-def itemlist(tparams):
-    return [vv for kk, vv in six.iteritems(tparams)]
+floatX = theano.config.floatX
+
+def make_local_copy(filename):
+    local_name = os.path.join('/Tmp/', os.environ['USER'],
+                              os.path.basename(filename))
+    if (not os.path.isfile(local_name) or
+                file_hash(open(filename)) != file_hash(open(local_name))):
+        print '.. made local copy at', local_name
+        shutil.copy(filename, local_name)
+    return local_name
 
 
-# dropout
-def dropout_layer(state_before, use_noise, trng):
-    proj = tensor.switch(use_noise,
-                         state_before *
-                         trng.binomial(state_before.shape,
-                                       p=0.5,
-                                       n=1,
-                                       dtype=state_before.dtype),
-                         state_before * 0.5)
-    return proj
-
-
-# initialize Theano shared variables according to the initial parameters
-def init_tparams(params):
-    tparams = OrderedDict()
-    for kk, pp in six.iteritems(params):
-        tparams[kk] = theano.shared(params[kk], name=kk)
-    return tparams
-
-
-# load parameters
-def load_params(path, params):
-    pp = numpy.load(path)
-    for kk, vv in six.iteritems(params):
-        if kk not in pp:
-            warnings.warn('%s is not in the archive' % kk)
-            continue
-        params[kk] = pp[kk]
-
-    return params
-
-
-# some utilities
-def ortho_weight(ndim):
-    W = numpy.random.randn(ndim, ndim)
-    u, s, v = numpy.linalg.svd(W)
-    return u.astype('float32')
-
-
-def norm_weight(nin, nout=None, scale=0.01, ortho=True):
-    if nout is None:
-        nout = nin
-    if nout == nin and ortho:
-        W = ortho_weight(nin)
+def get_encoding(targets, dim):
+    shape = targets.shape
+    ndim = targets.ndim
+    if ndim == 2:
+        targets = targets.flatten()
+    zeros_targets = T.zeros((targets.shape[0], dim))
+    new_targets = T.set_subtensor(zeros_targets[T.arange
+        (targets.shape[0]), targets], 1)
+    if ndim == 2:
+        return new_targets.reshape((shape[0],
+                                    shape[1], dim),
+                                   ndim=3).astype('int32')
     else:
-        W = scale * numpy.random.randn(nin, nout)
-    return W.astype('float32')
+        return new_targets.reshape((shape[0], dim),
+                                   ndim=2).astype('int32')
 
 
-def uniform_weight(nin, nout, scale=None):
-    if scale is None:
-        scale = numpy.sqrt(6. / (nin + nout))
+def sequence_categorical_crossentropy(prediction, targets, mask):
+    prediction_flat = prediction.reshape(((prediction.shape[0] *
+                                           prediction.shape[1]),
+                                          prediction.shape[2]), ndim=2)
+    targets_flat = targets.flatten()
+    mask_flat = mask.flatten()
+    ce = categorical_crossentropy(prediction_flat, targets_flat)
+    return T.sum(ce * mask_flat)
 
-    W = numpy.random.uniform(low=-scale, high=scale, size=(nin, nout))
-    return W.astype('float32')
+def sequence_binary_crossentropy(prediction, targets, mask):
+    prediction_flat = prediction.flatten()
+    targets_flat = targets.flatten()
+    mask_flat = mask.flatten()
+    ce = binary_crossentropy(prediction_flat, targets_flat)
+    return T.sum(ce * mask_flat)
 
+def sequence_binary_misrate(prediction, targets, mask):
+    prediction_flat = prediction.flatten()#reshape(((prediction.shape[0] *
+                                          # prediction.shape[1]),
+                                          #prediction.shape[2]), ndim=2)
+    targets_flat = targets.flatten()
+    mask_flat = mask.flatten()
+    #neq = T.neq(T.argmax(prediction_flat, axis=1), targets_flat)
+    neq = T.neq(prediction_flat, targets_flat)
+    neq *= mask_flat
+    use_length = mask_flat.sum()
+    mr = T.sum(neq) / T.cast(use_length, 'floatX')
+    return T.sum(mr)
 
-def concatenate(tensor_list, axis=0):
-    """
-    Alternative implementation of `theano.tensor.concatenate`.
-    This function does exactly the same thing, but contrary to Theano's own
-    implementation, the gradient is implemented on the GPU.
-    Backpropagating through `theano.tensor.concatenate` yields slowdowns
-    because the inverse operation (splitting) needs to be done on the CPU.
-    This implementation does not have that problem.
-    :usage:
-        >>> x, y = theano.tensor.matrices('x', 'y')
-        >>> c = concatenate([x, y], axis=1)
-    :parameters:
-        - tensor_list : list
-            list of Theano tensor expressions that should be concatenated.
-        - axis : int
-            the tensors will be joined along this axis.
-    :returns:
-        - out : tensor
-            the concatenated tensor expression.
-    """
-    concat_size = sum(tt.shape[axis] for tt in tensor_list)
+def sequence_misclass_rate(prediction, targets, mask):
+    prediction_flat = prediction.reshape(((prediction.shape[0] *
+                                           prediction.shape[1]),
+                                          prediction.shape[2]), ndim=2)
+    targets_flat = targets.flatten()
+    mask_flat = mask.flatten()
+    neq = T.neq(T.argmax(prediction_flat, axis=1), targets_flat)
+    neq *= mask_flat
+    use_length = mask_flat.sum()
+    mr = T.sum(neq) / T.cast(use_length, 'floatX')
+    return T.sum(mr)
 
-    output_shape = ()
-    for k in range(axis):
-        output_shape += (tensor_list[0].shape[k], )
-    output_shape += (concat_size, )
-    for k in range(axis + 1, tensor_list[0].ndim):
-        output_shape += (tensor_list[0].shape[k], )
+class Normalizer(object):
 
-    out = tensor.zeros(output_shape)
-    offset = 0
-    for tt in tensor_list:
-        indices = ()
-        for k in range(axis):
-            indices += (slice(None), )
-        indices += (slice(offset, offset + tt.shape[axis]), )
-        for k in range(axis + 1, tensor_list[0].ndim):
-            indices += (slice(None), )
-
-        out = tensor.set_subtensor(out[indices], tt)
-        offset += tt.shape[axis]
-
-    return out
-
-
-class Parameters():
     def __init__(self):
-        # self.__dict__['tparams'] = dict()
-        self.__dict__['tparams'] = OrderedDict()
+        self.sum = 0.0
+        self.sum_of_squares = 0.0
+        self.N = 0
+        self.trained = False
 
-    def __setattr__(self, name, array):
-        tparams = self.__dict__['tparams']
-        # if name not in tparams:
-        tparams[name] = array
+    def fit(self, generator):
+        iterator = generator()
+        for x in iterator:
+            self.sum += x.sum(0)
+            self.N += x.shape[0]
 
-    def __setitem__(self, name, array):
-        self.__setattr__(name, array)
+        # separate ss pass for numerical stability
+        iterator = generator()
+        self.x_mean = self.sum / self.N
+        for x in iterator:
+            self.sum_of_squares += ((x - self.x_mean)**2).sum(0)
 
-    def __getitem__(self, name):
-        return self.__getattr__(name)
+        self.x_stdev = np.sqrt(self.sum_of_squares / self.N)
+        self.trained = True
 
-    def __getattr__(self, name):
-        tparams = self.__dict__['tparams']
-        return tparams[name]
+    def apply(self, x):
+        assert self.trained
+        return (x - self.x_mean) / self.x_stdev
 
-    # def __getattr__(self):
-    # return self.get()
 
-    def remove(self, name):
-        del self.__dict__['tparams'][name]
+def key(x):
+    return x[0].shape[0]
 
-    def get(self):
-        return self.__dict__['tparams']
 
-    def values(self):
-        tparams = self.__dict__['tparams']
-        return tparams.values()
+def construct_hmm_stream(dataset, rng, pool_size, maximum_frames, window_features,
+                         **kwargs):
+    """Construct data stream.
 
-    def save(self, filename):
-        tparams = self.__dict__['tparams']
-        pickle.dump({p: tparams[p] for p in tparams}, open(filename, 'wb'), 2)
+    Parameters:
+    -----------
+    dataset : Dataset
+        Dataset to use.
+    rng : numpy.random.RandomState
+        Random number generator.
+    pool_size : int
+        Pool size for TIMIT dataset.
+    maximum_frames : int
+        Maximum frames for TIMIT datset.
+    subsample : bool, optional
+        Subsample features.
+    pretrain_alignment : bool, optional
+        Use phoneme alignment for pretraining.
+    uniform_alignment : bool, optional
+        Use uniform alignment for pretraining.
 
-    def load(self, filename):
-        tparams = self.__dict__['tparams']
-        loaded = pickle.load(open(filename, 'rb'), encoding='latin1')
-        for k in loaded:
-            tparams[k] = loaded[k]
+    """
+    kwargs.setdefault('subsample', False)
+    kwargs.setdefault('pretrain_alignment', False)
+    kwargs.setdefault('uniform_alignment', False)
+    stream = DataStream(
+        dataset,
+        iteration_scheme=SequentialShuffledScheme(dataset.num_examples,
+                                                  pool_size, rng))
+    stream = Reshape('features', 'features_shapes', data_stream=stream)
+    stream = Reshape('labels', 'labels_shapes', data_stream=stream)
+    means, stds = dataset.get_normalization_factors()
+    stream = Normalize(stream, means, stds)
+    if not window_features == 1:
+        stream = WindowFeatures(stream, 'features', window_features)
+    stream.produces_examples = False
+    stream = Mapping(stream,
+                     SortMapping(key=key))
+    stream = MaximumFrameCache(max_frames=maximum_frames, data_stream=stream,
+                               rng=rng)
+    stream = Padding(data_stream=stream,
+                     mask_sources=['features', 'labels'])
+    stream = Transpose(stream, [(1, 0, 2), (1, 0), (1, 0), (1, 0)])
 
-    def setvalues(self, values):
-        tparams = self.__dict__['tparams']
-        for p, v in zip(tparams, values):
-            tparams[p] = v
-
-    def __enter__(self):
-        _, _, _, env_locals = inspect.getargvalues(inspect.currentframe(
-        ).f_back)
-        self.__dict__['_env_locals'] = env_locals.keys()
-
-    def __exit__(self, type, value, traceback):
-        _, _, _, env_locals = inspect.getargvalues(inspect.currentframe(
-        ).f_back)
-        prev_env_locals = self.__dict__['_env_locals']
-        del self.__dict__['_env_locals']
-        for k in env_locals.keys():
-            if k not in prev_env_locals:
-                self.__setattr__(k, env_locals[k])
-                env_locals[k] = self.__getattr__(k)
-        return True
+    stream = ForceFloatX(stream)
+    if kwargs['subsample']:
+        stream = Subsample(stream, 'features', 5)
+        stream = Subsample(stream, 'features_mask', 5)
+    return stream
