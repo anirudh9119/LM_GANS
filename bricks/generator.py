@@ -97,7 +97,6 @@ class Generator(Initializable):
             each_cells = []
             for i in range(self.num_layers):
                 each_cells.append(self.networks[i].initial_cells[None, :])
-
             cells = tensor.concatenate(each_cells, axis=1)
             cells = tensor.repeat(cells, x.shape[1], 0)
 
