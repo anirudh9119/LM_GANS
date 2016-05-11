@@ -425,6 +425,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
             for data in train_stream.get_epoch_iterator():
                 num_batches += 1
                 if idx == 0:
+                    t0 = time.time()
                     cost_val, misrate_val = gen_tf_func(data[0], data[1],
                                                         data[2])
                     loop_log[(ep, 'gen_tf_cost')] += cost_val
@@ -432,6 +433,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
 
                 elif idx == 1:
+                    t0 = time.time()
                     batch_size = data[1].shape[1]
                     y0_gen_val = np.zeros((batch_size,
                                            label_dim)).astype('int32')
@@ -443,6 +445,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                     loop_log[(ep, 'disc_misrate')] += misrate_val
 
                 else:
+                    t0 = time.time()
                     batch_size = data[1].shape[1]
                     y0_gen_val = np.zeros((batch_size,
                                            label_dim)).astype('int32')
@@ -454,28 +457,32 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                     loop_log[(ep, 'gen_sample_misrate')] += misrate_val
 
             if idx == 0:
+                t1 = time.time()
                 loop_log[(ep, 'gen_tf_cost')] = \
                         loop_log[(ep, 'gen_tf_cost')] / num_batches
                 loop_log[(ep, 'gen_tf_misrate')] = \
                         loop_log[(ep, 'gen_tf_misrate')]  / num_batches
                 print 'cost of generator with tf {}'.format(loop_log[(ep, 'gen_tf_cost')])
                 print 'misclassification rate {}'.format(loop_log[(ep, 'gen_tf_misrate')])
-
+                print 'training time %f' % (t1 - t0)
             elif idx == 1:
+                t1 = time.time()
                 loop_log[(ep, 'disc_cost')] = \
                         loop_log[(ep, 'disc_cost')] / num_batches
                 loop_log[(ep, 'disc_misrate')] = \
                         loop_log[(ep, 'disc_misrate')] / num_batches
                 print 'cost of discriminator {}'.format(loop_log[(ep, 'disc_cost')])
                 print 'misclassifcation rate {}'.format(loop_log[(ep, 'disc_misrate')])
-
+                print 'training time %f' % (t1 - t0)
             else:
+                t1 = time.time()
                 loop_log[(ep, 'gen_sample_cost')] = \
                         loop_log[(ep, 'gen_sample_cost')] / num_batches
                 loop_log[(ep, 'gen_sample_misrate')] = \
                         loop_log[(ep, 'gen_sample_misrate')] / num_batches
                 print 'cost of generator with sampling {}'.format(loop_log[(ep, 'gen_sample_cost')])
                 print 'misclassification rate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
+                print 'training time %f' % (t1 - t0)
 
         print '.. evaluate on dev set'
         for idx in xrange(3):
