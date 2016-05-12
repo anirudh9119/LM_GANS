@@ -64,7 +64,8 @@ class Generator(Initializable):
 
                 cells_update = []
                 states_update = []
-                raw_states = tensor.concatenate([input_, label_tm1], axis=1)
+                raw_states = tensor.concatenate([input_, label_tm1],
+                                                axis=1).astype('float32')
 
                 for i in range(self.num_layers):
                     transformed_x = self.hid_linear_trans[i].apply(
@@ -97,9 +98,8 @@ class Generator(Initializable):
             each_cells = []
             for i in range(self.num_layers):
                 each_cells.append(self.networks[i].initial_cells[None, :])
-            cells = tensor.concatenate(each_cells, axis=1)
+            cells = tensor.concatenate(each_cells, axis=1).astype('float32')
             cells = tensor.repeat(cells, x.shape[1], 0)
-
             ([next_labels, next_states,
                     next_cells, soft_out], _) = theano.scan(fn=one_step,
                                                  sequences=[x, input_mask],

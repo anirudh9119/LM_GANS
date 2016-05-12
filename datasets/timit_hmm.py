@@ -11,7 +11,7 @@ class TIMIT(PytablesDataset):
         either 'train', 'dev' or 'test'.
     """
 
-    def __init__(self, which_set='train', local_copy=False):
+    def __init__(self, which_set='train', stop=None, local_copy=False):
         self.path = '/data/lisatmp4/speech/TIMIT/timit_framewise.h5'
         if local_copy and not self.path.startswith('/Tmp'):
             self.path = make_local_copy(self.path)
@@ -19,7 +19,7 @@ class TIMIT(PytablesDataset):
         self.sources = ('features', 'features_shapes',
                         'labels', 'labels_shapes')
         super(TIMIT, self).__init__(
-            self.path, self.sources, data_node=which_set)
+            self.path, self.sources, stop=stop, data_node=which_set)
 
     def get_normalization_factors(self):
         means = self.h5file.root._v_attrs.means

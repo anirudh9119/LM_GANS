@@ -159,7 +159,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                        window_features=window_features)
 
     print '.. initializing iterators'
-    train_dataset = TIMIT('train')
+    train_dataset = TIMIT('train', stop=400)
     train_stream = construct_hmm_stream(train_dataset, **stream_args)
     dev_dataset = TIMIT('dev')
     dev_stream = construct_hmm_stream(dev_dataset, **stream_args)
@@ -197,7 +197,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat, y_states], axis=2)
+    disc_i_tf = T.concatenate([y_hat, y_states], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -208,7 +208,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                                                        tf=False)
     disc_i_gen = T.concatenate([gen_soft_o,
                                 gen_states_o[:, :, -gen_dim:]],
-                                axis=2)
+                                axis=2).astype('float32')
 
     ############################
     #LAOD PRETRAINED TF NETWORK#
@@ -345,7 +345,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     print '.. compile discriminator'
     disc_updates = lasagne.updates.adam(disc_cost_train.copy('disc_cost'),
                                         disc_params,
-                                        learning_rate,
+                                        learning_rate / 10.,
                                         beta1=.9,
                                         beta2=.999)
 
@@ -372,7 +372,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     print '.. compile generator with sampling mode'
     gen_sample_updates = lasagne.updates.adam(gen_cost_train.copy('gen_sample_cost'),
                                               gen_params,
-                                              learning_rate,
+                                              learning_rate / 10.,
                                               beta1=.9,
                                               beta2=.999)
 
@@ -422,10 +422,10 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
         for idx in xrange(3):
             num_batches = 0
+            t0 = time.time()
             for data in train_stream.get_epoch_iterator():
                 num_batches += 1
                 if idx == 0:
-                    t0 = time.time()
                     cost_val, misrate_val = gen_tf_func(data[0], data[1],
                                                         data[2])
                     loop_log[(ep, 'gen_tf_cost')] += cost_val
@@ -433,7 +433,6 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
 
                 elif idx == 1:
-                    t0 = time.time()
                     batch_size = data[1].shape[1]
                     y0_gen_val = np.zeros((batch_size,
                                            label_dim)).astype('int32')
@@ -445,7 +444,6 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                     loop_log[(ep, 'disc_misrate')] += misrate_val
 
                 else:
-                    t0 = time.time()
                     batch_size = data[1].shape[1]
                     y0_gen_val = np.zeros((batch_size,
                                            label_dim)).astype('int32')
