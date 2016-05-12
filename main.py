@@ -11,8 +11,6 @@ from collections import OrderedDict
 import theano
 import theano.tensor as T
 
-from blocks.algorithms import (GradientDescent, StepClipping, CompositeRule,
-                               Momentum, Adam, RMSProp)
 from blocks.bricks import Logistic, Tanh, Softmax, Rectifier
 from blocks.extensions import FinishAfter, Printing, ProgressBar
 from blocks.extensions.monitoring import (TrainingDataMonitoring,
@@ -142,7 +140,7 @@ def parse_args():
 def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
           seed, dropout, beam_search, experiment_path, window_features,
           pool_size, maximum_frames, initialization, weight_noise,
-          to_watch, learning_rate, patience, **kwargs):
+          to_watch, learning_rate, patience, clipping, **kwargs):
     print '.. TIMIT experiment'
     print '.. arguments:', ' '.join(sys.argv)
     t0 = time.time()
@@ -345,7 +343,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     ################
     print '.. compile discriminator'
     all_disc_grads = T.grad(disc_cost_train.copy('disc_cost'), disc_params)
-    scaled_disc_grads = total_norm_constraint(all_disc_grads, 200)
+    scaled_disc_grads = total_norm_constraint(all_disc_grads, clipping)
     disc_updates = lasagne.updates.adam(scaled_disc_grads,
                                         disc_params,
                                         learning_rate / 10.,
@@ -361,7 +359,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     print '.. compile generator with TF mode'
     all_gen_tf_grads = T.grad(gen_tf_cost_train.copy('gen_tf_cost'), gen_params)
-    scaled_gen_tf_grads = total_norm_constraint(all_gen_tf_grads, 200)
+    scaled_gen_tf_grads = total_norm_constraint(all_gen_tf_grads, clipping)
 
     gen_tf_updates = lasagne.updates.adam(scaled_gen_tf_grads,
                                           gen_params,
@@ -377,7 +375,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     print '.. compile generator with sampling mode'
     all_gen_sample_grads = T.grad(gen_cost_train.copy('gen_sample_cost'), gen_params)
-    scaled_gen_sample_grads = total_norm_constraint(all_gen_sample_grads, 200)
+    scaled_gen_sample_grads = total_norm_constraint(all_gen_sample_grads, clipping)
 
     gen_sample_updates = lasagne.updates.adam(scaled_gen_sample_grads,
                                               gen_params,
@@ -427,7 +425,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
         loop_log[(ep, 'gen_sample_cost_eval')] = 0.
         loop_log[(ep, 'gen_sample_misrate_eval')] = 0.
 
-        print '##############Epoch {}###############'.format(ep)
+        print '################## Epoch {} ###################'.format(ep)
 
         #for idx in xrange(3):
         num_batches = 0
@@ -463,22 +461,22 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                 loop_log[(ep, 'gen_tf_cost')] / num_batches
         loop_log[(ep, 'gen_tf_misrate')] = \
                 loop_log[(ep, 'gen_tf_misrate')]  / num_batches
-        print 'cost of generator with tf {}'.format(loop_log[(ep, 'gen_tf_cost')])
-        print 'misclassification rate {}'.format(loop_log[(ep, 'gen_tf_misrate')])
+        print 'Teacher Forcing Cost {}'.format(loop_log[(ep, 'gen_tf_cost')])
+        print 'Teacher Forcing Misrate {}'.format(loop_log[(ep, 'gen_tf_misrate')])
 
         loop_log[(ep, 'disc_cost')] = \
                 loop_log[(ep, 'disc_cost')] / num_batches
         loop_log[(ep, 'disc_misrate')] = \
                 loop_log[(ep, 'disc_misrate')] / num_batches
-        print 'cost of discriminator {}'.format(loop_log[(ep, 'disc_cost')])
-        print 'misclassifcation rate {}'.format(loop_log[(ep, 'disc_misrate')])
+        print 'Discriminator Cost {}'.format(loop_log[(ep, 'disc_cost')])
+        print 'Discriminator Misrate {}'.format(loop_log[(ep, 'disc_misrate')])
 
         loop_log[(ep, 'gen_sample_cost')] = \
                 loop_log[(ep, 'gen_sample_cost')] / num_batches
         loop_log[(ep, 'gen_sample_misrate')] = \
                 loop_log[(ep, 'gen_sample_misrate')] / num_batches
-        print 'cost of generator with sampling {}'.format(loop_log[(ep, 'gen_sample_cost')])
-        print 'misclassification rate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
+        print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost')])
+        print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
         print 'training time %f' % (t1 - t0)
 
         print '.. evaluate on dev set'
@@ -509,22 +507,22 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                 loop_log[(ep, 'gen_tf_cost_eval')] / num_batches
         loop_log[(ep, 'gen_tf_misrate_eval')] = \
                 loop_log[(ep, 'gen_tf_misrate_eval')]  / num_batches
-        print 'cost of generator with tf {} on dev set'.format(loop_log[(ep, 'gen_tf_cost_eval')])
-        print 'misclassification rate {} on dev set'.format(loop_log[(ep, 'gen_tf_misrate_eval')])
+        print 'Teacher Forcing Cost {}'.format(loop_log[(ep, 'gen_tf_cost_eval')])
+        print 'Teacher Forcing Misrate {}'.format(loop_log[(ep, 'gen_tf_misrate_eval')])
 
         loop_log[(ep, 'disc_cost_eval')] = \
                 loop_log[(ep, 'disc_cost_eval')] / num_batches
         loop_log[(ep, 'disc_misrate_eval')] = \
                 loop_log[(ep, 'disc_misrate_eval')] / num_batches
-        print 'cost of discriminator {} on dev set'.format(loop_log[(ep, 'disc_cost_eval')])
-        print 'misclassifcation rate {} on dev set'.format(loop_log[(ep, 'disc_misrate_eval')])
+        print 'Discriminator Cost {}'.format(loop_log[(ep, 'disc_cost_eval')])
+        print 'Discriminator Misrate {}'.format(loop_log[(ep, 'disc_misrate_eval')])
 
         loop_log[(ep, 'gen_sample_cost_eval')] = \
                 loop_log[(ep, 'gen_sample_cost_eval')] / num_batches
         loop_log[(ep, 'gen_sample_misrate_eval')] = \
                 loop_log[(ep, 'gen_sample_misrate_eval')] / num_batches
-        print 'cost of generator with sampling {} on dev set'.format(loop_log[(ep, 'gen_sample_cost_eval')])
-        print 'misclassification rate {} on dev set'.format(loop_log[(ep, 'gen_sample_misrate_eval')])
+        print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost_eval')])
+        print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate_eval')])
 
         params_dict = OrderedDict()
         for param_name, param in disc_train_model.get_parameter_dict().iteritems():
