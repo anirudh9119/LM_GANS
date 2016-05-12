@@ -494,7 +494,7 @@ def train(worker, model_options, data_options,
 
                 print "batch sampling"
 
-                sample_batch, score_batch, nss_batch = gen_sample_batch(tparams, f_next, model_options, trng=trng,maxlen = maxlen, argmax=False, initial_state = tparams['initial_hidden_state_0'].get_value())
+                sample_batch, score_batch, nss_batch = gen_sample_batch(tparams, f_next, model_options, trng=trng,maxlen = maxlen, argmax=False, initial_state = tparams['initial_hidden_state_1'].get_value())
 
                 gensample = sample_batch
 
@@ -738,7 +738,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=5568)
+    worker = Worker(control_port=4568)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

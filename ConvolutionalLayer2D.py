@@ -55,7 +55,7 @@ class ConvPoolLayer2D(object):
         bias_init = 0.0
         self.activation = activation
 
-        std = 0.02
+        std = 0.002
 
         self.filter_shape = np.asarray((in_channels, kernel_len, kernel_len, out_channels))
 

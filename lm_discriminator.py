@@ -54,32 +54,29 @@ def build_GAN_model(tparams, options):
 
     print "embedding dim", emb.ndim
 
-    initial_state_reshaped = tensor.concatenate([tparams['initial_hidden_state_0']] * 32, axis = 0)
+    initial_state_reshaped = tensor.concatenate([tparams['initial_hidden_state_1']] * 32, axis = 0) + 0.0 * tensor.mean(tparams['initial_hidden_state_0'])
 
     # pass through gru layer, recurrence here
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
-                                            mask=x_mask, init_state = initial_state_reshaped)
+                                            mask=x_mask, init_state = initial_state_reshaped[:,0:512])
 
-    print "gru layer 1 dim", proj[0].ndim
+    proj[0] = proj[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
 
-    '''
     proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
                                             prefix='encoder_1',
-                                            mask=None)
+                                            mask=None, init_state = initial_state_reshaped[:,512:512*2])
+
     proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
                                             prefix='encoder_2',
-                                            mask=None)
+                                            mask=None, init_state = initial_state_reshaped[:,512*2:512*3])
 
     #1024 x 30
 
-    proj_2[0] = proj_2[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
     states_concat = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 2)
-    '''
-    proj[0] = proj[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
-    states_concat = proj[0]
+    
     # compute word probabilities
-    logit_lstm = get_layer('ff')[1](tparams, states_concat, options,
+    logit_lstm = get_layer('ff')[1](tparams, proj_2[0], options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
@@ -111,7 +108,6 @@ def build_GAN_model(tparams, options):
     #get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat])
     ##states_concat_disc = tensor.concatenate([proj[0], proj_1[0], proj_2[0], logit_init], axis = 2)
     states_concat_disc = tensor.concatenate([logit_lstm + logit_prev, logit], axis = 2)
-
 
     get_proj_h = theano.function([x, x_mask, bern_dist, uniform_sampling],[states_concat_disc])
 

@@ -72,7 +72,6 @@ def init_params(options):
                                               prefix='encoder',
                                               nin=options['dim_word'],
                                               dim=options['dim'])
-    '''
     params = get_layer(options['encoder'])[0](options, params,
                                               prefix='encoder_1',
                                               nin=options['dim'],
@@ -81,7 +80,6 @@ def init_params(options):
                                               prefix='encoder_2',
                                               nin=options['dim'],
                                               dim=options['dim'])
-    '''
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm',
                                 nin=options['dim'], nout=options['dim_word'],
@@ -95,6 +93,7 @@ def init_params(options):
 
 
     params['initial_hidden_state_0'] = np.zeros(shape = (1, options['dim'])).astype('float32')
+    params['initial_hidden_state_1'] = np.zeros(shape = (1, 3 * options['dim'])).astype('float32')
 
     return params
 
@@ -167,28 +166,28 @@ def build_sampler(tparams, options, trng,biased_sampling_term):
                                             prefix='encoder',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state[:,:1024])
-    '''
+                                            init_state=init_state[:,:512])
+
     proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
                                             prefix='encoder_1',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state[:,1024:2048])
+                                            init_state=init_state[:,512:512*2])
 
     proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
                                             prefix='encoder_2',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state[:,2048:2048+1024])
-
+                                            init_state=init_state[:,512*2:512*3])
 
     next_state = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 1)
     #32 x 1024
-    '''
-    next_state = proj[0]
+    
+
+    #next_state = proj[0]
 
     # compute the output probability dist and sample
-    logit_lstm = get_layer('ff')[1](tparams, next_state, options,
+    logit_lstm = get_layer('ff')[1](tparams, proj_2[0], options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')

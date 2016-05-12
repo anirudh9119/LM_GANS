@@ -4,16 +4,16 @@
     "decay_c": 0,
     "patience": 100,
     "finish_after": 10000000,
-    "lrate": 0.002,
+    "lrate": 0.0001,
     "max_epochs": 5000
   },
   "multi": {
     "control_port": 3568,
-    "batch_port": 5568,
-    "log_port": 5569
+    "batch_port": 3568,
+    "log_port": 3569
   },
   "management": {
-    "sampleFreq": 1,
+    "sampleFreq": 10,
     "validFreq": 500,
     "saveto": "/u/lambalex/logs/pbt_char_logs/",
     "reload_": false,
@@ -37,14 +37,14 @@
     "use_dropout": false,
     "encoder": "gru",
     "n_words": 50,
-    "train_generator_flag":true,
+    "train_generator_flag":false,
     "flag_save_tsne": false,
-    "use_gan_objective": true,
+    "use_gan_objective": false,
     "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_without_gan",
     "model_name": "mulitple_hidden_states_without_gan",
     "beta1" : 0.9,
     "beta2" : 0.5,
-    "learning_rate": 0.0001,
+    "learning_rate": 0.00001,
     "limit_desc_start": 0.70,
     "limit_desc_end": 0.90
   }

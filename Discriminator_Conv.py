@@ -51,15 +51,15 @@ class discriminator:
         print "USING CONVOLUTIONAL DISCRIMINATOR"
 
 
-        c1_in = hidden_state_features[:784].transpose(1,2,0).reshape((mb_size * 2, num_features, 28, 28))
+        c1_in = dropout(hidden_state_features[:784], 0.8).transpose(1,2,0).reshape((mb_size * 2, num_features, 28, 28))
 
-        c1 = ConvPoolLayer2D(in_channels = num_features, out_channels = 1024, kernel_len = 5, stride = 2)
-        c2 = ConvPoolLayer2D(in_channels = 1024, out_channels = 512, kernel_len = 5, stride = 2)
-        c3 = ConvPoolLayer2D(in_channels = 512, out_channels = 256, kernel_len = 5, stride = 2)
+        c1 = ConvPoolLayer2D(in_channels = num_features, out_channels = 1024, kernel_len = 5, stride = 2, batch_norm = False)
+        c2 = ConvPoolLayer2D(in_channels = 1024, out_channels = 512, kernel_len = 5, stride = 2, batch_norm = False)
+        c3 = ConvPoolLayer2D(in_channels = 512, out_channels = 256, kernel_len = 5, stride = 2, batch_norm = False)
 
-        c1_out = c1.output(c1_in)
-        c2_out = c2.output(c1_out)
-        c3_out = c3.output(c2_out)
+        c1_out = dropout(c1.output(c1_in), 0.8)
+        c2_out = dropout(c2.output(c1_out), 0.8)
+        c3_out = dropout(c3.output(c2_out), 0.8)
 
         h_out_4 = DenseLayer((mb_size * 2, 4096), num_units = 1, nonlinearity=None)
 
@@ -67,7 +67,7 @@ class discriminator:
 
         raw_y = h_out_4_value
 
-        classification = T.nnet.sigmoid(T.clip(raw_y, -10.0, 10.0))
+        classification = T.nnet.sigmoid(T.clip(raw_y, -50.0, 50.0))
 
         #self.get_matrix = theano.function(inputs=[hidden_state_features],
         #                                  outputs=[classification])
@@ -77,9 +77,9 @@ class discriminator:
         p_real =  classification[0:mb_size]
         p_gen  = classification[mb_size:]
 
-        self.d_cost_real = bce(p_real, 0.99 * T.ones(p_real.shape)).mean()
-        self.d_cost_gen = bce(p_gen, 0.01 + T.zeros(p_gen.shape)).mean()
-        self.g_cost_d = bce(p_gen, 0.99 * T.ones(p_gen.shape)).mean()
+        self.d_cost_real = bce(p_real, 0.9 * T.ones(p_real.shape)).mean()
+        self.d_cost_gen = bce(p_gen, 0.1 + T.zeros(p_gen.shape)).mean()
+        self.g_cost_d = bce(p_gen, 0.9 * T.ones(p_gen.shape)).mean()
         self.d_cost = self.d_cost_real + self.d_cost_gen
         self.g_cost = self.g_cost_d
 
