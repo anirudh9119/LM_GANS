@@ -93,7 +93,7 @@ class Generator(Initializable):
                 encoder_dist = self.children[-1].apply(encoder_out)
                 labels_out = gen_sample(encoder_dist, argmax=False)
 
-                return labels_out, states_out, cells_out, encoder_dist
+                return labels_out, states_out, cells_out, encoder_out
 
             each_cells = []
             for i in range(self.num_layers):

@@ -154,14 +154,14 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     #################
     #BUILD GENERATOR#
     #################
-    gen_bidir1 = GenLSTM(name='bidir1',
+    gen_unidir1 = GenLSTM(name='unidir1',
                   dim=gen_dim, activation=Tanh())
 
-    gen_bidir2 = GenLSTM(name='bidir2',
+    gen_unidir2 = GenLSTM(name='unidir2',
                   dim=gen_dim, activation=Tanh())
     generator = Generator(weights_init=weights_init,
                           biases_init=Constant(.0),
-                          networks=[gen_bidir1, gen_bidir2],
+                          networks=[gen_unidir1, gen_unidir2],
                           dims=[(input_dim + label_dim) * window_features,
                                 gen_dim,
                                 gen_dim,
@@ -175,7 +175,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat, y_states, x], axis=2).astype('float32')
+    disc_i_tf = T.concatenate([y_hat_o, y_states, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -192,26 +192,24 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     ############################
     #LAOD PRETRAINED TF NETWORK#
     ############################
-    if 'load_path' not in kwargs:
-        raise KeyError('The pretrained TF network should be provided!')
-
-    print '.. load parameters of the TF network'
-    model = Model(y_hat)
-    parameters = model.get_parameter_dict()
-    params = np.load(kwargs['load_path'])
-    params_names = params.keys()
-    for par in parameters.keys():
-        split_name = par[1:].split('/')[1:]
-        if len(split_name) > 1:
-            split_name = '-'.join(split_name)
-        else:
-            split_name = split_name[0]
-        dash_name = 'multilayerencoder_alex-' + \
-                split_name
-        if parameters[par].get_value().shape != \
-                params[dash_name].shape:
-                    raise ValueError('dimension wrong!')
-        parameters[par].set_value(params[dash_name])
+    if 'load_path' in kwargs:
+        print '.. load parameters of the TF network'
+        model = Model(y_hat)
+        parameters = model.get_parameter_dict()
+        params = np.load(kwargs['load_path'])
+        params_names = params.keys()
+        for par in parameters.keys():
+            split_name = par[1:].split('/')[1:]
+            if len(split_name) > 1:
+                split_name = '-'.join(split_name)
+            else:
+                split_name = split_name[0]
+            dash_name = 'multilayerencoder_alex-' + \
+                    split_name
+            if parameters[par].get_value().shape != \
+                    params[dash_name].shape:
+                        raise ValueError('dimension wrong!')
+            parameters[par].set_value(params[dash_name])
 
     #####################
     #BUILD DISCRIMINATOR#
@@ -359,7 +357,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(scaled_gen_sample_grads,
                                               gen_params,
-                                              learning_rate / 100.,
+                                              learning_rate / 10.,
                                               beta1=.9,
                                               beta2=.999)
 
@@ -389,6 +387,45 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     param_path = os.path.join(experiment_path, 'params.npy')
     param_file = open(param_path, 'wb')
     log_path = os.path.join(experiment_path, 'log.zip')
+
+    print '.. pretrain teacher forcing generator'
+    for pre_ep in xrange(epochs):
+        loop_log[(pre_ep, 'pretrain_tf_cost')] = 0.
+        loop_log[(pre_ep, 'pretrain_tf_misrate')] = 0.
+        num_batches = 0
+        for data in train_stream.get_epoch_iterator():
+            num_batches += 1
+
+            cost_val, misrate_val = gen_tf_func(data[0], data[1],
+                                                data[2])
+            loop_log[(pre_ep, 'pretrain_tf_cost')] += cost_val
+            loop_log[(pre_ep, 'pretrain_tf_misrate')] += misrate_val
+
+        loop_log[(pre_ep, 'pretrain_tf_cost')] = \
+                loop_log[(pre_ep, 'pretrain_tf_cost')] / num_batches
+        loop_log[(pre_ep, 'pretrain_tf_misrate')] = \
+                loop_log[(pre_ep, 'pretrain_tf_misrate')]  / num_batches
+
+        print '################## Pretrained Epoch {} ###################'.format(pre_ep)
+        print 'Pretrained Teacher Forcing Cost {}'.format(loop_log[(pre_ep,
+                                                                    'pretrain_tf_cost')])
+        print 'Pretrained Teacher Forcing Misrate {}'.format(loop_log[(pre_ep,
+                                                                      'pretrain_tf_misrate')])
+        num_batches = 0
+        cost_val_eval = 0.
+        misrate_val_eval = 0.
+        for data in dev_stream.get_epoch_iterator():
+            num_batches += 1
+            cost_val, misrate_val = gen_tf_eval(data[0], data[1],
+                                                data[2])
+            cost_val_eval += cost_val
+            misrate_val_eval += misrate_val
+
+        print 'Pretrained Teacher Forcing Cost on Dev Set {}'.format(cost_val_eval / num_batches)
+        print 'Pretrained Teacher Forcing Misrate on Dev Set {}'.format(misrate_val_eval / num_batches)
+        print ("\n")
+        if misrate_val_eval / num_batches < .2:
+            break
 
     for ep in xrange(epochs):
         loop_log[(ep, 'disc_cost')] = 0.
@@ -462,16 +499,13 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
         print 'training time {}s'.format(t1 - t0)
         print ("\n")
+
         print '.. evaluate on dev set'
         num_batches = 0
         for data in dev_stream.get_epoch_iterator():
             num_batches += 1
-            cost_val, misrate_val = gen_tf_eval(data[0], data[1],
-                                                data[2])
-            loop_log[(ep, 'gen_tf_cost_eval')] += cost_val
-            loop_log[(ep, 'gen_tf_misrate_eval')] += misrate_val
-
             batch_size = data[1].shape[1]
+
             y0_gen_val = np.zeros((batch_size,
                                    label_dim)).astype('int32')
             y0_gen_val[:, 0] = 1
@@ -485,6 +519,12 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                                     data[2], y0_gen_val)
             loop_log[(ep, 'gen_sample_cost_eval')] += cost_val
             loop_log[(ep, 'gen_sample_misrate_eval')] += misrate_val
+
+
+            cost_val, misrate_val = gen_tf_eval(data[0], data[1],
+                                                data[2])
+            loop_log[(ep, 'gen_tf_cost_eval')] += cost_val
+            loop_log[(ep, 'gen_tf_misrate_eval')] += misrate_val
 
         loop_log[(ep, 'gen_tf_cost_eval')] = \
                 loop_log[(ep, 'gen_tf_cost_eval')] / num_batches
