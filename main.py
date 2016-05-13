@@ -42,34 +42,13 @@ floatX = theano.config.floatX
 logger = logging.getLogger(__name__)
 logger.setLevel('INFO')
 
-
-def learning_algorithm(args):
-    name = args.algorithm
-    learning_rate = float(args.learning_rate)
-    momentum = args.momentum
-    clipping_threshold = args.clipping
-    if name == 'adam':
-        clipping = StepClipping(threshold=np.cast[floatX](clipping_threshold))
-        adam = Adam(learning_rate=learning_rate)
-        step_rule = CompositeRule([adam, clipping])
-    elif name == 'rms_prop':
-        clipping = StepClipping(threshold=np.cast[floatX](clipping_threshold))
-        rms_prop = RMSProp(learning_rate=learning_rate)
-        step_rule = CompositeRule([clipping, rms_prop])
-    else:
-        clipping = StepClipping(threshold=np.cast[floatX](clipping_threshold))
-        sgd_momentum = Momentum(learning_rate=learning_rate, momentum=momentum)
-        step_rule = CompositeRule([clipping, sgd_momentum])
-    return step_rule
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description='TIMIT experiment')
     parser.add_argument('--experiment_path', type=str,
                         default='./',
                         help='Location for writing results')
     parser.add_argument('--input_dim', type=int,
-                        default=301,
+                        default=120,
                         help='Input dimension')
     parser.add_argument('--gen_dim', type=int,
                         default=250,
@@ -89,7 +68,7 @@ def parse_args():
     parser.add_argument('--load_path',
                         default=argparse.SUPPRESS,
                         help='File with parameter to be loaded)')
-    parser.add_argument('--learning_rate', default=1e-4, type=float,
+    parser.add_argument('--learning_rate', default=1e-3, type=float,
                         help='Learning rate')
     parser.add_argument('--weight_noise', type=float, default=0.,
                         help='Learning rate')
@@ -137,7 +116,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
+def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
           seed, dropout, beam_search, experiment_path, window_features,
           pool_size, maximum_frames, initialization, weight_noise,
           to_watch, learning_rate, patience, clipping, **kwargs):
@@ -183,7 +162,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     generator = Generator(weights_init=weights_init,
                           biases_init=Constant(.0),
                           networks=[gen_bidir1, gen_bidir2],
-                          dims=[input_dim * window_features,
+                          dims=[(input_dim + label_dim) * window_features,
                                 gen_dim,
                                 gen_dim,
                                 label_dim])
@@ -196,7 +175,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat, y_states], axis=2).astype('float32')
+    disc_i_tf = T.concatenate([y_hat, y_states, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -206,7 +185,8 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                                                        targets=y0_gen,
                                                        tf=False)
     disc_i_gen = T.concatenate([gen_soft_o,
-                                gen_states_o[:, :, -gen_dim:]],
+                                gen_states_o[:, :, -gen_dim:],
+                                x],
                                 axis=2).astype('float32')
 
     ############################
@@ -247,7 +227,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
     discriminator = MultiLayerEncoder(weights_init=weights_init,
                                       biases_init=Constant(.0),
                                       networks=[disc_bidir1, disc_bidir2],
-                                      dims=[gen_dim + label_dim,
+                                      dims=[gen_dim + label_dim + input_dim,
                                             disc_dim,
                                             disc_dim,
                                             1])
@@ -379,7 +359,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(scaled_gen_sample_grads,
                                               gen_params,
-                                              learning_rate / 10.,
+                                              learning_rate / 100.,
                                               beta1=.9,
                                               beta2=.999)
 
@@ -424,7 +404,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
         loop_log[(ep, 'gen_tf_misrate_eval')] = 0.
         loop_log[(ep, 'gen_sample_cost_eval')] = 0.
         loop_log[(ep, 'gen_sample_misrate_eval')] = 0.
-
+        loop_log['iterations'] = 0
         print '################## Epoch {} ###################'.format(ep)
 
         #for idx in xrange(3):
@@ -456,6 +436,9 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
             loop_log[(ep, 'gen_sample_misrate')] += misrate_val
 
         t1 = time.time()
+
+        loop_log['iterations'] += num_batches
+
         print '..performance on training set'
         loop_log[(ep, 'gen_tf_cost')] = \
                 loop_log[(ep, 'gen_tf_cost')] / num_batches
@@ -477,8 +460,8 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                 loop_log[(ep, 'gen_sample_misrate')] / num_batches
         print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost')])
         print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
-        print 'training time %f' % (t1 - t0)
-
+        print 'training time {}s'.format(t1 - t0)
+        print ("\n")
         print '.. evaluate on dev set'
         num_batches = 0
         for data in dev_stream.get_epoch_iterator():
@@ -523,7 +506,7 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
                 loop_log[(ep, 'gen_sample_misrate_eval')] / num_batches
         print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost_eval')])
         print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate_eval')])
-
+        print ("\n")
         params_dict = OrderedDict()
         for param_name, param in disc_train_model.get_parameter_dict().iteritems():
             params_dict[param_name] = param.get_value()
@@ -536,5 +519,4 @@ def train(step_rule, input_dim, gen_dim, disc_dim, label_dim, epochs,
 
 if __name__ == '__main__':
     args = parse_args()
-    step_rule = learning_algorithm(args)
-    train(step_rule, **args.__dict__)
+    train(**args.__dict__)
