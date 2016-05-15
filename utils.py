@@ -31,6 +31,91 @@ def make_local_copy(filename):
         shutil.copy(filename, local_name)
     return local_name
 
+def get_top(array, N, states, cells, last_traces=None, choose='argmax'):
+    if array.ndim == 2:
+        if choose == 'argmax':
+            top_labels = np.argsort(array, axis=1)[..., ::-1][..., :N]
+
+        if not last_traces:
+            label_list = top_labels.tolist()
+            new_label_list = []
+            for batch in label_list:
+                new_batch = []
+                for i in batch:
+                    new_batch.append([i])
+                new_label_list.append(new_batch)
+            traces = new_label_list
+
+
+    elif array.ndim == 3:
+        array = array.transpose((1, 0 ,2)).reshape((array.shape[1], -1))
+        if choose == 'argmax':
+            top_labels = np.argsort(array, axis=1)[..., ::-1][..., :N]
+
+        label_row = top_labels // 181
+        label_col = top_labels % 181
+
+        new_label_list = []
+        for i in xrange(top_labels.shape[0]):
+            new_batch = []
+            for j in xrange(top_labels.shape[1]):
+                new_batch.append(last_traces[i][label_row[i, j]] +
+                                 [label_col[i, j]])
+            new_label_list.append(new_batch)
+        traces = new_label_list
+
+    stack_label = []
+    stack_prob = []
+
+    stack_state = []
+    stack_cell = []
+
+    for i in xrange(N):
+        indices = np.zeros((top_labels.shape[0], 181))
+        if not last_traces:
+            indices[np.arange(top_labels.shape[0]), top_labels[:, i]] = 1
+        else:
+            indices[np.arange(top_labels.shape[0]), label_col[:, i]] = 1
+        prob = array[np.arange((top_labels.shape[0])), top_labels[:, i]]
+        if not last_traces:
+            sts = states
+            cls = cells
+        else:
+            sts = states[label_row[:, i],np.arange((top_labels.shape[0]))]
+            cls = cells[label_row[:, i], np.arange((top_labels.shape[0]))]
+        stack_label.append(indices[None, ...])
+        stack_prob.append(prob[None, ...])
+        stack_state.append(sts[None, ...])
+        stack_cell.append(cls[None, ...])
+
+    return (traces,
+            np.vstack(tuple(stack_label)).astype('int32'),
+            np.vstack(tuple(stack_prob)).astype('float32'),
+            np.vstack(tuple(stack_state)).astype('float32'),
+            np.vstack(tuple(stack_cell)).astype('float32'))
+
+
+def beam_search(func, data, data_mask, labels, state_out, cell_out,
+                probs_out, beam_size=10, last_traces=None,
+                choose='argmax'):
+
+    all_states = []
+    all_cells = []
+    all_soft_outs = []
+
+    for i in xrange(beam_size):
+        soft_out, state_out_, cell_out_ = func(data, data_mask, labels[i],
+                                               state_out[i], cell_out[i])
+        all_soft_outs.append(soft_out * probs_out[i][:, None])
+        all_states.append(state_out_)
+        all_cells.append(cell_out_)
+
+    all_states = np.asarray(all_states)
+    all_cells = np.asarray(all_cells)
+    all_soft_outs = np.asarray(all_soft_outs)
+    return get_top(all_soft_outs, beam_size, all_states,
+                   all_cells, last_traces=last_traces, choose=choose)
+
 
 def get_encoding(targets, dim):
     shape = targets.shape

@@ -213,3 +213,79 @@ class MultiLayerEncoder(Initializable):
         self.out_linear_trans.input_dim = self.dims[-2] * 2
         self.out_linear_trans.output_dim = self.dims[-1]
         self.out_linear_trans.use_bias = self.use_bias
+
+
+class GeneratorTest(Initializable):
+    @lazy()
+    def __init__(self, networks, dims, **kwargs):
+        super(GeneratorTest, self).__init__(**kwargs)
+        self.dims = dims
+        self.networks = networks
+        self.hid_linear_trans = [Fork([name for name in
+                                            networks[i].apply.sequences
+                                            if name != 'mask'],
+                                           name='fork_{}'.format(i),
+                                           prototype=Linear(), **kwargs)
+                                      for i in range(len(networks))]
+
+        self.out_linear_trans = Linear(name='out_linear', **kwargs)
+        self.children = (networks +
+                         self.hid_linear_trans +
+                         [self.out_linear_trans])
+        self.num_layers = len(networks)
+
+    @application
+    def apply(self, x, input_mask, *args, **kwargs):
+        states = kwargs.pop('states', None)
+        cells = kwargs.pop('cells', None)
+        y_tm1 = kwargs.pop('targets', None)
+        x = tensor.concatenate([x, y_tm1], axis=1)
+        raw_states = x
+        cells_update = []
+        states_update = []
+
+        for i in range(self.num_layers):
+            transformed_x = self.hid_linear_trans[i].apply(
+                raw_states)
+            if states.shape[0] != transformed_x.shape[1] // 4:
+                shape = transformed_x.shape[1] // 4
+                states = states[:, i*shape: (i+1)*shape]
+
+            if cells.shape[0] != transformed_x.shape[1] // 4:
+                shape = transformed_x.shape[1] // 4
+                cells = cells[:, i*shape: (i+1)*shape]
+
+            raw_states, raw_cells = self.networks[i].apply(transformed_x,
+                                                           states,
+                                                           cells,
+                                                           mask=input_mask,
+                                                           iterate=False,
+                                                           *args, **kwargs)
+            cells_update.append(raw_cells)
+            states_update.append(raw_states)
+        cells_out = tensor.concatenate(cells_update, axis=1)
+        states_out = tensor.concatenate(states_update, axis=1)
+        encoder_out = self.out_linear_trans.apply(raw_states)
+        return encoder_out, states_out, cells_out
+
+    def _push_allocation_config(self):
+        if not len(self.dims) - 2 == self.num_layers:
+            raise ValueError
+
+        self.hid_linear_trans[0].input_dim = self.dims[0]
+        self.hid_linear_trans[0].output_dims = \
+            [self.networks[0].get_dim(name) for
+             name in self.hid_linear_trans[0].input_names]
+
+        for network, input_dim, layer in \
+                equizip(self.networks[1:],
+                        self.dims[1: -2],
+                        self.hid_linear_trans[1:]):
+            layer.input_dim = input_dim
+            layer.output_dims = \
+                [network.get_dim(name) for
+                 name in layer.input_names]
+            layer.use_bias = self.use_bias
+        self.out_linear_trans.input_dim = self.dims[-2]
+        self.out_linear_trans.output_dim = self.dims[-1]
+        self.out_linear_trans.use_bias = self.use_bias

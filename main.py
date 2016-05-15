@@ -163,9 +163,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                           biases_init=Constant(.0),
                           networks=[gen_unidir1, gen_unidir2],
                           dims=[(input_dim + label_dim) * window_features,
-                                gen_dim,
-                                gen_dim,
-                                label_dim])
+                                 gen_dim,
+                                 gen_dim,
+                                 label_dim])
     generator.initialize()
 
     #################
@@ -194,18 +194,22 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     #####################
     disc_bidir1 = BidirectionalGraves(name='disc_bidir1',
                                       prototype=LSTM(
-                                      dim=disc_dim, activation=Tanh()))
+                                      dim=disc_dim*2, activation=Tanh()))
 
     disc_bidir2 = BidirectionalGraves(name='disc_bidir2',
                                       prototype=LSTM(
-                                      dim=disc_dim, activation=Tanh()))
+                                      dim=disc_dim*2, activation=Tanh()))
+
+    #disc_bidir3 = BidirectionalGraves(name='disc_bidir3',
+    #                                  prototype=LSTM(
+    #                                  dim=disc_dim, activation=Tanh()))
 
     discriminator = MultiLayerEncoder(weights_init=weights_init,
                                       biases_init=Constant(.0),
                                       networks=[disc_bidir1, disc_bidir2],
                                       dims=[gen_dim + label_dim + input_dim,
-                                            disc_dim,
-                                            disc_dim,
+                                            disc_dim*2,
+                                            disc_dim*2,
                                             1])
 
     discriminator.initialize()
@@ -242,7 +246,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     ####################
     #DISCRIMINATOR COST#
     ####################
-    disc_cost = (sequence_binary_crossentropy(disc_o_tf,
+    disc_cost = (1.5 * sequence_binary_crossentropy(disc_o_tf,
                                               T.ones(disc_o_tf.shape[:2]),
                                               input_mask) +
                  sequence_binary_crossentropy(disc_o_gen,
@@ -324,7 +328,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     disc_updates = lasagne.updates.adam(scaled_disc_grads,
                                         disc_params,
-                                        learning_rate / 10.,
+                                        learning_rate,
                                         beta1=.9,
                                         beta2=.999)
     disc_func = theano.function(inputs=[x, input_mask, y, y0_gen],
@@ -382,7 +386,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(scaled_gen_sample_grads,
                                               gen_params,
-                                              learning_rate / 10.,
+                                              learning_rate,
                                               beta1=.9,
                                               beta2=.999)
 
@@ -412,6 +416,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     param_path = os.path.join(experiment_path, 'params.npy')
     param_file = open(param_path, 'wb')
     log_path = os.path.join(experiment_path, 'log.zip')
+    all_params_dict = OrderedDict()
 
     print '.. pretrain teacher forcing generator'
     for pre_ep in xrange(epochs):
@@ -420,14 +425,15 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         loop_log[(pre_ep, 'pretrain_tf_cost')] = 0.
         loop_log[(pre_ep, 'pretrain_tf_misrate')] = 0.
         num_batches = 0
+        all_norms = 0.
         for data in train_stream.get_epoch_iterator():
             num_batches += 1
 
             cost_val, misrate_val, norm = gen_tf_func(data[0], data[1],
                                                       data[2])
+            all_norms += norm
             loop_log[(pre_ep, 'pretrain_tf_cost')] += cost_val
             loop_log[(pre_ep, 'pretrain_tf_misrate')] += misrate_val
-            print 'gradient norm at step {} is {}'.format(num_batches, norm)
 
         loop_log[(pre_ep, 'pretrain_tf_cost')] = \
                 loop_log[(pre_ep, 'pretrain_tf_cost')] / num_batches
@@ -439,6 +445,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                                                     'pretrain_tf_cost')])
         print 'Pretrained Teacher Forcing Misrate {}'.format(loop_log[(pre_ep,
                                                                       'pretrain_tf_misrate')])
+
         num_batches = 0
         cost_val_eval = 0.
         misrate_val_eval = 0.
@@ -451,7 +458,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
         print 'Pretrained Teacher Forcing Cost on Dev Set {}'.format(cost_val_eval / num_batches)
         print 'Pretrained Teacher Forcing Misrate on Dev Set {}'.format(misrate_val_eval / num_batches)
+        print 'gradient norm {}'.format(all_norms / num_batches)
         print ("\n")
+
         if misrate_val_eval / num_batches < .2:
             break
 
@@ -476,6 +485,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
         num_batches = 0
         t0 = time.time()
+        disc_all_norms = 0.
+        gen_sample_all_norms = 0.
+        gen_tf_all_norms = 0.
 
         for data in train_stream.get_epoch_iterator():
             num_batches += 1
@@ -487,7 +499,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
             cost_val, misrate_tf_val, misrate_gen_val, norm = disc_func(data[0], data[1],
                                                                         data[2], y0_gen_val)
 
-            print 'gradient norm at step {} is {}'.format(num_batches, norm)
+            disc_all_norms += norm
+
             loop_log[(ep, 'disc_cost')] += cost_val
             loop_log[(ep, 'disc_tf_misrate')] += misrate_tf_val
             loop_log[(ep, 'disc_gen_misrate')] += misrate_gen_val
@@ -495,16 +508,14 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
             cost_val, misrate_val, norm = gen_sample_func(data[0], data[1],
                                                           data[2], y0_gen_val)
 
-            print 'gradient norm at step {} is {}'.format(num_batches, norm)
-            loop_log[(ep, 'disc_cost')] += cost_val
+            gen_sample_all_norms += norm
             loop_log[(ep, 'gen_sample_cost')] += cost_val
             loop_log[(ep, 'gen_sample_misrate')] += misrate_val
 
             cost_val, misrate_val, norm = gen_tf_func(data[0], data[1],
                                                       data[2])
+            gen_tf_all_norms += norm
 
-            print 'gradient norm at step {} is {}'.format(num_batches, norm)
-            loop_log[(ep, 'disc_cost')] += cost_val
             loop_log[(ep, 'gen_tf_cost')] += cost_val
             loop_log[(ep, 'gen_tf_misrate')] += misrate_val
 
@@ -536,6 +547,11 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                 loop_log[(ep, 'gen_sample_misrate')] / num_batches
         print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost')])
         print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate')])
+
+        print 'gradient norm of discriminator {}'.format(disc_all_norms / num_batches)
+        print 'gradient norm of generator with sampling mode {}'.format(gen_sample_all_norms / num_batches)
+        print 'gradient norm of generator with tf mode {}'.format(gen_tf_all_norms / num_batches)
+
         print 'training time {}s'.format(t1 - t0)
         print ("\n")
 
@@ -590,10 +606,13 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         print 'Generator Cost {}'.format(loop_log[(ep, 'gen_sample_cost_eval')])
         print 'Generator Misrate {}'.format(loop_log[(ep, 'gen_sample_misrate_eval')])
         print ("\n")
+
+
         params_dict = OrderedDict()
         for param_name, param in disc_train_model.get_parameter_dict().iteritems():
             params_dict[param_name] = param.get_value()
-        np.save(param_file, params_dict)
+        all_params_dict[ep] = params_dict
+        np.save(param_file, all_params_dict)
 
         with open(log_path, 'wb') as fin:
             pickle.dump(loop_log, fin, protocol=pickle.HIGHEST_PROTOCOL)
