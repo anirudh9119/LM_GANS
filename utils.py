@@ -96,7 +96,7 @@ def get_top(array, N, states, cells, last_traces=None, choose='argmax'):
 
 
 def beam_search(func, data, data_mask, labels, state_out, cell_out,
-                probs_out, beam_size=10, last_traces=None,
+                probs_out, beam_size=20, last_traces=None,
                 choose='argmax'):
 
     all_states = []

@@ -23,6 +23,7 @@ from initialization import NormalizedInitialization
 from datasets.timit_hmm import TIMIT
 from utils import (construct_hmm_stream,
                    get_encoding,
+                   get_top,
                    beam_search)
 
 
@@ -157,7 +158,7 @@ def eval(save_path, input_dim, state_dim, label_dim,
                                                      y_val, state_out,
                                                      cell_out)
                 (top_traces, top_labels, top_probs,
-                        top_states, top_cells) = get_top(soft_out, 10,
+                        top_states, top_cells) = get_top(soft_out, 20,
                                                          state_out, cell_out)
             else:
                 (top_traces, top_labels, top_probs,

@@ -249,15 +249,15 @@ class GeneratorTest(Initializable):
                 raw_states)
             if states.shape[0] != transformed_x.shape[1] // 4:
                 shape = transformed_x.shape[1] // 4
-                states = states[:, i*shape: (i+1)*shape]
+                states_ = states[:, i*shape: (i+1)*shape]
 
             if cells.shape[0] != transformed_x.shape[1] // 4:
                 shape = transformed_x.shape[1] // 4
-                cells = cells[:, i*shape: (i+1)*shape]
+                cells_ = cells[:, i*shape: (i+1)*shape]
 
             raw_states, raw_cells = self.networks[i].apply(transformed_x,
-                                                           states,
-                                                           cells,
+                                                           states_,
+                                                           cells_,
                                                            mask=input_mask,
                                                            iterate=False,
                                                            *args, **kwargs)
