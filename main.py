@@ -4,7 +4,7 @@ import os
 import sys
 import logging
 import lasagne
-from lasagne.updates import total_norm_constraint
+from lasagne.updates import apply_momentum, total_norm_constraint
 import numpy as np
 from collections import OrderedDict
 
@@ -194,7 +194,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     #####################
     disc_bidir1 = BidirectionalGraves(name='disc_bidir1',
                                       prototype=LSTM(
-                                      dim=disc_dim*6, activation=Tanh()))
+                                      dim=disc_dim*4, activation=Tanh()))
 
     #disc_bidir2 = BidirectionalGraves(name='disc_bidir2',
     #                                  prototype=LSTM(
@@ -208,7 +208,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                       biases_init=Constant(.0),
                                       networks=[disc_bidir1],
                                       dims=[gen_dim * 2 + label_dim + input_dim,
-                                            disc_dim * 6,
+                                            disc_dim * 4,
                                             1])
 
     discriminator.initialize()
@@ -315,7 +315,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         gen_cg_train = apply_noise(gen_cg_train, gen_params, weight_noise)
         gen_wn_tf_cost = gen_cg_train.outputs[0].copy('gen_wn_tf_cost')
         gen_wn_gen_cost = gen_cg_train.outputs[1].copy('gen_wn_gen_cost')
-
+        disc_cg_train = ComputationGraph(disc_cost_train)
+        disc_cg_train = apply_noise(disc_cg_train, disc_params, weight_noise)
+        disc_wn_cost = disc_cg_train.outputs[0].copy('disc_wn_cost')
     ################
     #ADAM OPTIMIZER#
     ################
@@ -325,14 +327,21 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
    #                                                      clipping,
    #                                                      return_norm=True)
 
-    disc_updates = lasagne.updates.adam(disc_cost_train.copy('disc_cost'),
+    if weight_noise > 0:
+        train_disc_outputs = [disc_wn_cost, disc_tf_misrate, disc_gen_misrate]
+        disc_cost_ = disc_wn_cost.copy('disc_cost')
+    else:
+        train_disc_outputs = [disc_cost_train, disc_tf_misrate, disc_gen_misrate]
+        disc_cost_ = disc_cost_train.copy('disc_cost')
+    disc_cost_ = T.switch(T.lt(disc_gen_misrate, 0.1), 0., disc_cost_)
+
+    disc_updates = lasagne.updates.adam(disc_cost_,
                                         disc_params,
                                         learning_rate / 10.,
                                         beta1=.9,
                                         beta2=.999)
     disc_func = theano.function(inputs=[x, input_mask, y, y0_gen],
-                                outputs=[disc_cost_train, disc_tf_misrate,
-                                         disc_gen_misrate],
+                                outputs=train_disc_outputs,
                                 updates=disc_updates)
 
     disc_eval = theano.function(inputs=[x, input_mask, y, y0_gen],
@@ -349,9 +358,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         gen_tf_cost_ = gen_tf_cost_train.copy('gen_tf_cost')
 
     #all_gen_tf_grads = T.grad(gen_tf_cost_, gen_params)
-    #scaled_gen_tf_grads, gen_tf_norm = total_norm_constraint(all_gen_tf_grads,
-    #                                                         clipping,
-    #                                                         return_norm=True)
+    #scaled_gen_tf_grads = total_norm_constraint(all_gen_tf_grads,
+    #                                            clipping)
 
     #train_tf_outputs.append(gen_tf_norm)
 
@@ -385,7 +393,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(gen_sample_cost_,
                                               gen_params,
-                                              learning_rate / 10.,
+                                              learning_rate,
                                               beta1=.9,
                                               beta2=.999)
 
@@ -457,7 +465,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         #print 'gradient norm {}'.format(all_norms / num_batches)
         print ("\n")
 
-        if misrate_val_eval / num_batches < .2:
+        if misrate_val_eval / num_batches < .3:
             break
 
     for ep in xrange(epochs):
