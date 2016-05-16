@@ -3,7 +3,7 @@ import time
 import os
 import sys
 import logging
-
+import pickle
 import numpy as np
 
 import theano
@@ -49,6 +49,9 @@ def parse_args():
     parser.add_argument('--seed', type=int,
                         default=123,
                         help='Random generator seed')
+    parser.add_argument('--best_epoch', type=int,
+                        default=0,
+                        help='best epoch to load')
     parser.add_argument('--load_path',
                         default=argparse.SUPPRESS,
                         help='File with parameter to be loaded)')
@@ -69,7 +72,7 @@ def parse_args():
     return parser.parse_args()
 
 def eval(save_path, input_dim, state_dim, label_dim,
-         seed, window_features, pool_size,
+         seed, window_features, pool_size, best_epoch,
          maximum_frames, initialization, **kwargs):
     print '.. TIMIT experiment'
     print '.. arguments:', ' '.join(sys.argv)
@@ -123,7 +126,9 @@ def eval(save_path, input_dim, state_dim, label_dim,
 
     if 'load_path' not in kwargs:
         raise KeyError('params should be provided!')
-    params = np.load(kwargs['load_path']).item()
+    params_file = open(kwargs['load_path'], 'r')
+    for epoch in xrange(best_epoch):
+        params = pickle.load(params_file)
     params_names = params.keys()
 
     for par in parameters.keys():
@@ -131,7 +136,6 @@ def eval(save_path, input_dim, state_dim, label_dim,
         dash_name[1] = 'generator'
         dash_name_ = '/'.join(dash_name)
         parameters[par].set_value(params[dash_name_])
-
     init_cells_val = np.hstack((params['/generator/unidir1.initial_cells'][None, ...],
                                 params['/generator/unidir2.initial_cells'][None, ...]))
 
@@ -158,13 +162,14 @@ def eval(save_path, input_dim, state_dim, label_dim,
                                                      y_val, state_out,
                                                      cell_out)
                 (top_traces, top_labels, top_probs,
-                        top_states, top_cells) = get_top(soft_out, 20,
+                        top_states, top_cells) = get_top(soft_out, 10,
                                                          state_out, cell_out)
             else:
                 (top_traces, top_labels, top_probs,
                     top_states, top_cells) = beam_search(func, x_val, x_mask,
                                                          top_labels, top_states,
                                                          top_cells, top_probs,
+                                                         beam_size=10,
                                                          last_traces=top_traces)
         #select top
         top_traces = np.asarray(top_traces)[:, 0, :] * data[1].T

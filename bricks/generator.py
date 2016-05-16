@@ -50,13 +50,17 @@ class Generator(Initializable):
             raw_states = x
 
         if self.tf:
+            all_raw_states = []
             for i in range(self.num_layers):
                 transformed_x = self.hid_linear_trans[i].apply(
                         raw_states)
                 raw_states, _ = self.networks[i].apply(transformed_x,
                                                        mask=input_mask,
                                                        *args, **kwargs)
+                all_raw_states.append(raw_states)
             encoder_out = self.out_linear_trans.apply(raw_states)
+            raw_states = tensor.concatenate(all_raw_states,
+                                            axis=2).astype('float32')
             return encoder_out, raw_states
 
         else:
