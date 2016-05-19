@@ -50,18 +50,18 @@ class Generator(Initializable):
             raw_states = x
 
         if self.tf:
-            all_raw_cells = []
+            all_raw_states = []
             for i in range(self.num_layers):
                 transformed_x = self.hid_linear_trans[i].apply(
                         raw_states)
                 raw_states, raw_cells = self.networks[i].apply(transformed_x,
                                                        mask=input_mask,
                                                        *args, **kwargs)
-                all_raw_cells.append(raw_cells)
+                all_raw_states.append(raw_states)
             encoder_out = self.out_linear_trans.apply(raw_states)
-            raw_cells = tensor.concatenate(all_raw_cells,
+            raw_states = tensor.concatenate(all_raw_states,
                                             axis=2).astype('float32')
-            return encoder_out, raw_cells
+            return encoder_out, raw_states
 
         else:
             def one_step(input_, mask_, label_tm1, states_tm1, cells_tm1):
@@ -96,7 +96,6 @@ class Generator(Initializable):
                 encoder_out = self.out_linear_trans.apply(raw_states)
                 encoder_dist = self.children[-1].apply(encoder_out)
                 labels_out = gen_sample(encoder_dist, argmax=False)
-
                 return labels_out, states_out, cells_out, encoder_out
 
             each_cells = []
@@ -105,12 +104,11 @@ class Generator(Initializable):
             cells = tensor.concatenate(each_cells, axis=1).astype('float32')
             cells = tensor.repeat(cells, x.shape[1], 0)
             ([next_labels, next_states,
-                    next_cells, soft_out], _) = theano.scan(fn=one_step,
+                    next_cells, soft_out], scan_updates) = theano.scan(fn=one_step,
                                                  sequences=[x, input_mask],
                                                  outputs_info=[y_tm1, states,
                                                                cells, None])
-
-            return next_labels, next_states, next_cells, soft_out
+            return next_labels, next_states, next_cells, soft_out, scan_updates
 
 
     def _push_allocation_config(self):

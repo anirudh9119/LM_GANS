@@ -175,20 +175,20 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     #TEACHER FORCING#
     #################
     encoding_y = get_encoding(y, label_dim)
-    y_hat_o, y_cells = generator.apply(x, input_mask, targets=encoding_y[:-1])
+    y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat_o, y_cells, x], axis=2).astype('float32')
+    disc_i_tf = T.concatenate([y_hat_o, y_states, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
     ###############
     (y_hat_gen_o, gen_states_o,
-            gen_cells_o, gen_soft_o) = generator.apply(x, input_mask,
-                                                       targets=y0_gen,
-                                                       tf=False)
+            gen_cells_o, gen_soft_o, gen_scan_up) = generator.apply(x, input_mask,
+                                                                    targets=y0_gen,
+                                                                    tf=False)
     disc_i_gen = T.concatenate([gen_soft_o,
-                                gen_cells_o,
+                                gen_states_o,
                                 x],
                                 axis=2).astype('float32')
 
@@ -253,7 +253,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     disc_cost = (sequence_binary_crossentropy(disc_o_tf,
                                               T.ones(disc_o_tf.shape[:2]),
                                               input_mask) +
-                 1.2 * sequence_binary_crossentropy(disc_o_gen,
+                 sequence_binary_crossentropy(disc_o_gen,
                                               T.zeros(disc_o_gen.shape[:2]),
                                               input_mask))
 
@@ -272,9 +272,12 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     ################
 
     #sampling cost
-    gen_cost = sequence_binary_crossentropy(disc_o_gen,
-                                            T.ones(disc_o_gen.shape[:2]),
-                                            input_mask)
+    gen_cost = (sequence_binary_crossentropy(disc_o_gen,
+                                             T.ones(disc_o_gen.shape[:2]),
+                                             input_mask) +
+                sequence_binary_crossentropy(disc_o_tf,
+                                             T.zeros(disc_o_tf.shape[:2]),
+                                             input_mask))
     gen_cost_train = aggregation.mean(gen_cost,
                                       batch_size).copy("gen_sequence_cost")
 
@@ -342,16 +345,19 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     disc_updates = lasagne.updates.adam(disc_cost_,
                                         disc_params,
-                                        learning_rate / 5.,
+                                        learning_rate / 10.,
                                         beta1=.9,
                                         beta2=.999)
+
+    disc_updates.update(gen_scan_up)
     disc_func = theano.function(inputs=[x, input_mask, y, y0_gen],
                                 outputs=train_disc_outputs,
                                 updates=disc_updates)
 
     disc_eval = theano.function(inputs=[x, input_mask, y, y0_gen],
                                 outputs=[disc_cost_train, disc_tf_misrate,
-                                         disc_gen_misrate])
+                                         disc_gen_misrate],
+                                updates=gen_scan_up)
 
     print '.. compile generator with TF mode'
 
@@ -381,6 +387,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     gen_tf_eval = theano.function(inputs=[x, input_mask, y],
                                   outputs=[gen_tf_cost_train, gen_tf_misrate])
 
+
     print '.. compile generator with sampling mode'
     #if weight_noise > 0:
     #    train_gen_outputs = [gen_wn_gen_cost, gen_sample_misrate]
@@ -398,16 +405,17 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(gen_sample_cost_,
                                               gen_params,
-                                              learning_rate / 2.,
-                                              beta1=.5)
-
+                                              learning_rate / 5.,
+                                              beta1=.9)
+    gen_sample_updates.update(gen_scan_up.items())
     gen_sample_func = theano.function(inputs=[x, input_mask, y, y0_gen],
                                       outputs=train_gen_outputs,
                                       updates=gen_sample_updates)
 
     gen_sample_eval = theano.function(inputs=[x, input_mask, y, y0_gen],
                                       outputs=[gen_cost_train,
-                                               gen_sample_misrate])
+                                               gen_sample_misrate],
+                                      updates=gen_scan_up)
 
     t1 = time.time()
     print "Building time: %f" % (t1 - t0)
@@ -468,7 +476,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         #print 'gradient norm {}'.format(all_norms / num_batches)
         print ("\n")
 
-        if misrate_val_eval / num_batches < .35:
+        if misrate_val_eval / num_batches < .25:
             break
 
     for ep in xrange(epochs):
