@@ -93,6 +93,9 @@ def parse_args():
     parser.add_argument('--dropout', type=float,
                         default=0,
                         help='Use dropout in middle layers')
+    parser.add_argument('--best_epoch', type=int,
+                        default=0,
+                        help='epoch to load parameters')
     parser.add_argument('--pool_size', type=int,
                         default=200,
                         help='Pool size for dataset')
@@ -172,10 +175,10 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     #TEACHER FORCING#
     #################
     encoding_y = get_encoding(y, label_dim)
-    y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
+    y_hat_o, y_cells = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat_o, y_states, x], axis=2).astype('float32')
+    disc_i_tf = T.concatenate([y_hat_o, y_cells, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -185,7 +188,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                                        targets=y0_gen,
                                                        tf=False)
     disc_i_gen = T.concatenate([gen_soft_o,
-                                gen_states_o,
+                                gen_cells_o,
                                 x],
                                 axis=2).astype('float32')
 
@@ -231,7 +234,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         print '.. load parameters of the trained network'
         model = Model(disc_o)
         parameters = model.get_parameter_dict()
-        params = np.load(kwargs['load_path']).item()
+        loaded = open(kwargs['load_path'], 'r')
+        for _ in xrange(kwargs['best_epoch']):
+            params = pickle.load(loaded)
         params_names = params.keys()
         for par in parameters.keys():
             if par not in params_names:
@@ -248,7 +253,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     disc_cost = (sequence_binary_crossentropy(disc_o_tf,
                                               T.ones(disc_o_tf.shape[:2]),
                                               input_mask) +
-                 sequence_binary_crossentropy(disc_o_gen,
+                 1.2 * sequence_binary_crossentropy(disc_o_gen,
                                               T.zeros(disc_o_gen.shape[:2]),
                                               input_mask))
 
@@ -333,11 +338,11 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     else:
         train_disc_outputs = [disc_cost_train, disc_tf_misrate, disc_gen_misrate]
         disc_cost_ = disc_cost_train.copy('disc_cost')
-    disc_cost_ = T.switch(T.lt(disc_gen_misrate, 0.1), 0., disc_cost_)
+    #disc_cost_ = T.switch(T.lt(disc_gen_misrate, 0.1), 0., disc_cost_)
 
     disc_updates = lasagne.updates.adam(disc_cost_,
                                         disc_params,
-                                        learning_rate / 10.,
+                                        learning_rate / 5.,
                                         beta1=.9,
                                         beta2=.999)
     disc_func = theano.function(inputs=[x, input_mask, y, y0_gen],
@@ -350,12 +355,12 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     print '.. compile generator with TF mode'
 
-    if weight_noise > 0:
-        train_tf_outputs = [gen_wn_tf_cost, gen_tf_misrate]
-        gen_tf_cost_ = gen_wn_tf_cost.copy('gen_tf_cost')
-    else:
-        train_tf_outputs = [gen_tf_cost_train, gen_tf_misrate]
-        gen_tf_cost_ = gen_tf_cost_train.copy('gen_tf_cost')
+    #if weight_noise > 0:
+    #    train_tf_outputs = [gen_wn_tf_cost, gen_tf_misrate]
+    #    gen_tf_cost_ = gen_wn_tf_cost.copy('gen_tf_cost')
+    #else:
+    train_tf_outputs = [gen_tf_cost_train, gen_tf_misrate]
+    gen_tf_cost_ = gen_tf_cost_train.copy('gen_tf_cost')
 
     #all_gen_tf_grads = T.grad(gen_tf_cost_, gen_params)
     #scaled_gen_tf_grads = total_norm_constraint(all_gen_tf_grads,
@@ -377,12 +382,12 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                   outputs=[gen_tf_cost_train, gen_tf_misrate])
 
     print '.. compile generator with sampling mode'
-    if weight_noise > 0:
-        train_gen_outputs = [gen_wn_gen_cost, gen_sample_misrate]
-        gen_sample_cost_ = gen_wn_gen_cost.copy('gen_sample_cost')
-    else:
-        train_gen_outputs = [gen_cost_train, gen_sample_misrate]
-        gen_sample_cost_ = gen_cost_train.copy('gen_sample_cost')
+    #if weight_noise > 0:
+    #    train_gen_outputs = [gen_wn_gen_cost, gen_sample_misrate]
+    #    gen_sample_cost_ = gen_wn_gen_cost.copy('gen_sample_cost')
+    #else:
+    train_gen_outputs = [gen_cost_train, gen_sample_misrate]
+    gen_sample_cost_ = gen_cost_train.copy('gen_sample_cost')
 
     #all_gen_sample_grads = T.grad(gen_sample_cost_, gen_params)
     #scaled_gen_sample_grads, gen_sample_norm = total_norm_constraint(all_gen_sample_grads,
@@ -393,10 +398,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_updates = lasagne.updates.adam(gen_sample_cost_,
                                               gen_params,
-                                              learning_rate,
-                                              beta1=.9,
-                                              beta2=.999)
-
+                                              learning_rate / 2.,
+                                              beta1=.5)
 
     gen_sample_func = theano.function(inputs=[x, input_mask, y, y0_gen],
                                       outputs=train_gen_outputs,
@@ -465,7 +468,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         #print 'gradient norm {}'.format(all_norms / num_batches)
         print ("\n")
 
-        if misrate_val_eval / num_batches < .3:
+        if misrate_val_eval / num_batches < .35:
             break
 
     for ep in xrange(epochs):
@@ -484,6 +487,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         loop_log[(ep, 'gen_tf_misrate_eval')] = 0.
         loop_log[(ep, 'gen_sample_cost_eval')] = 0.
         loop_log[(ep, 'gen_sample_misrate_eval')] = 0.
+        loop_log[(-1, 'disc_tf_misrate_eval')] = 1
+        loop_log[(-1, 'disc_gen_misrate_eval')] = 1
         loop_log['iterations'] = 0
         print '################## Epoch {} ###################'.format(ep)
 
@@ -500,14 +505,17 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                    label_dim)).astype('int32')
             y0_gen_val[:, 0] = 1
 
-            cost_val, misrate_tf_val, misrate_gen_val = disc_func(data[0], data[1],
-                                                                        data[2], y0_gen_val)
+            if loop_log[(ep-1, 'disc_tf_misrate_eval')] < 0.05 and \
+                loop_log[(ep-1, 'disc_gen_misrate_eval')] < 0.15:
+                    pass
+            else:
+                cost_val, misrate_tf_val, misrate_gen_val = disc_func(data[0], data[1],
+                                                                      data[2], y0_gen_val)
 
            # #disc_all_norms += norm
-
-            loop_log[(ep, 'disc_cost')] += cost_val
-            loop_log[(ep, 'disc_tf_misrate')] += misrate_tf_val
-            loop_log[(ep, 'disc_gen_misrate')] += misrate_gen_val
+                loop_log[(ep, 'disc_cost')] += cost_val
+                loop_log[(ep, 'disc_tf_misrate')] += misrate_tf_val
+                loop_log[(ep, 'disc_gen_misrate')] += misrate_gen_val
 
             cost_val, misrate_val = gen_sample_func(data[0], data[1],
                                                           data[2], y0_gen_val)
