@@ -4,7 +4,7 @@ import os
 import sys
 import logging
 import lasagne
-from lasagne.updates import apply_momentum, total_norm_constraint
+from lasagne.updates import adam, apply_momentum, sgd, total_norm_constraint
 import numpy as np
 from collections import OrderedDict
 
@@ -17,7 +17,7 @@ from blocks.extensions.monitoring import (TrainingDataMonitoring,
                                           DataStreamMonitoring)
 from blocks.extensions.saveload import Load, Checkpoint
 from blocks.filter import VariableFilter
-from blocks.graph import ComputationGraph, apply_noise
+from blocks.graph import ComputationGraph, apply_dropout
 from blocks.initialization import IsotropicGaussian, Constant, Orthogonal, Uniform
 from blocks.monitoring import aggregation
 from blocks.model import Model
@@ -35,6 +35,7 @@ from utils import (sequence_categorical_crossentropy,
                    construct_hmm_stream,
                    get_encoding)
 
+from blocks.roles import WEIGHT, INPUT
 from sampler import gen_sample
 import pickle
 
@@ -54,7 +55,7 @@ def parse_args():
                         default=250,
                         help='States dimensions')
     parser.add_argument('--disc_dim', type=int,
-                        default=250,
+                        default=1000,
                         help='States dimensions')
     parser.add_argument('--label_dim', type=int,
                         default=181,
@@ -68,9 +69,7 @@ def parse_args():
     parser.add_argument('--load_path',
                         default=argparse.SUPPRESS,
                         help='File with parameter to be loaded)')
-    parser.add_argument('--learning_rate', default=1e-3, type=float,
-                        help='Learning rate')
-    parser.add_argument('--weight_noise', type=float, default=0.,
+    parser.add_argument('--learning_rate', default=1e-4, type=float,
                         help='Learning rate')
     parser.add_argument('--momentum',
                         default=0.9,
@@ -121,7 +120,7 @@ def parse_args():
 
 def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
           seed, dropout, beam_search, experiment_path, window_features,
-          pool_size, maximum_frames, initialization, weight_noise,
+          pool_size, maximum_frames, initialization,
           to_watch, learning_rate, patience, clipping, **kwargs):
     print '.. TIMIT experiment'
     print '.. arguments:', ' '.join(sys.argv)
@@ -166,9 +165,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                           biases_init=Constant(.0),
                           networks=[gen_unidir1, gen_unidir2],
                           dims=[(input_dim + label_dim) * window_features,
-                                 gen_dim,
-                                 gen_dim,
-                                 label_dim])
+                                gen_dim,
+                                gen_dim,
+                                label_dim])
     generator.initialize()
 
     #################
@@ -178,7 +177,6 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
-    disc_i_tf = T.concatenate([y_hat_o, y_states, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -187,35 +185,35 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
             gen_cells_o, gen_soft_o, gen_scan_up) = generator.apply(x, input_mask,
                                                                     targets=y0_gen,
                                                                     tf=False)
-    disc_i_gen = T.concatenate([gen_soft_o,
-                                gen_states_o,
-                                x],
-                                axis=2).astype('float32')
-
     #####################
     #BUILD DISCRIMINATOR#
     #####################
     disc_bidir1 = BidirectionalGraves(name='disc_bidir1',
                                       prototype=LSTM(
-                                      dim=disc_dim*4, activation=Tanh()))
+                                      dim=disc_dim, activation=Tanh()))
 
     #disc_bidir2 = BidirectionalGraves(name='disc_bidir2',
     #                                  prototype=LSTM(
-    #                                  dim=disc_dim*2, activation=Tanh()))
+    #                                  dim=disc_dim, activation=Tanh()))
 
     #disc_bidir3 = BidirectionalGraves(name='disc_bidir3',
     #                                  prototype=LSTM(
     #                                  dim=disc_dim, activation=Tanh()))
 
     discriminator = MultiLayerEncoder(weights_init=weights_init,
-                                      biases_init=Constant(.0),
-                                      networks=[disc_bidir1],
-                                      dims=[gen_dim * 2 + label_dim + input_dim,
-                                            disc_dim * 4,
-                                            1])
+                                       biases_init=Constant(.0),
+                                       networks=[disc_bidir1],
+                                       dims=[gen_dim * 2 + label_dim + input_dim,
+                                             disc_dim,
+                                             1])
 
     discriminator.initialize()
-    disc_i = T.concatenate([disc_i_tf, disc_i_gen], axis=1).astype('float32')
+
+    disc_tf = T.tensor3('disc_tf')
+    disc_gen = T.tensor3('disc_gen')
+
+    disc_i = T.concatenate([disc_tf, disc_gen], axis=1).astype('float32')
+
     input_mask_ = T.repeat(input_mask, 2, axis=1)
 
     raw_disc_o = discriminator.apply(disc_i, input_mask_)
@@ -315,17 +313,18 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         if param_name[:4] == '/gen':
             gen_params.append(param)
 
-    ################
-    #WN REGULARIZER#
-    ################
-    if weight_noise > 0:
-        gen_cg_train = ComputationGraph([gen_tf_cost_train, gen_cost_train])
-        gen_cg_train = apply_noise(gen_cg_train, gen_params, weight_noise)
-        gen_wn_tf_cost = gen_cg_train.outputs[0].copy('gen_wn_tf_cost')
-        gen_wn_gen_cost = gen_cg_train.outputs[1].copy('gen_wn_gen_cost')
+    ##########################
+    #Dropout on Discriminator#
+    ##########################
+    mlp_layers = discriminator.mlp.linear_transformations
+    if dropout:
         disc_cg_train = ComputationGraph(disc_cost_train)
-        disc_cg_train = apply_noise(disc_cg_train, disc_params, weight_noise)
-        disc_wn_cost = disc_cg_train.outputs[0].copy('disc_wn_cost')
+        variables_mlp = VariableFilter(roles=[INPUT],
+                                       bricks=mlp_layers)(disc_cg_train.variables)
+        cg_dropout = apply_dropout(disc_cg_train,
+                                   variables_mlp, 0.1)
+        disc_cost_train = cg_dropout.outputs[0].copy('disc_cost_train')
+
     ################
     #ADAM OPTIMIZER#
     ################
@@ -335,37 +334,25 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
    #                                                      clipping,
    #                                                      return_norm=True)
 
-    if weight_noise > 0:
-        train_disc_outputs = [disc_wn_cost, disc_tf_misrate, disc_gen_misrate]
-        disc_cost_ = disc_wn_cost.copy('disc_cost')
-    else:
-        train_disc_outputs = [disc_cost_train, disc_tf_misrate, disc_gen_misrate]
-        disc_cost_ = disc_cost_train.copy('disc_cost')
-    #disc_cost_ = T.switch(T.lt(disc_gen_misrate, 0.1), 0., disc_cost_)
+    train_disc_outputs = [disc_cost_train, disc_tf_misrate, disc_gen_misrate]
+    disc_cost_ = disc_cost_train.copy('disc_cost')
 
-    disc_updates = lasagne.updates.adam(disc_cost_,
-                                        disc_params,
-                                        learning_rate / 10.,
-                                        beta1=.9,
-                                        beta2=.999)
+    disc_updates = adam(disc_cost_,
+                        disc_params,
+                        learning_rate)
 
-    disc_updates.update(gen_scan_up)
-    disc_func = theano.function(inputs=[x, input_mask, y, y0_gen],
+    disc_func = theano.function(inputs=[disc_tf, disc_gen, input_mask],
                                 outputs=train_disc_outputs,
                                 updates=disc_updates)
 
-    disc_eval = theano.function(inputs=[x, input_mask, y, y0_gen],
+    disc_eval = theano.function(inputs=[disc_tf, disc_gen, input_mask],
                                 outputs=[disc_cost_train, disc_tf_misrate,
-                                         disc_gen_misrate],
-                                updates=gen_scan_up)
+                                         disc_gen_misrate])
 
     print '.. compile generator with TF mode'
 
-    #if weight_noise > 0:
-    #    train_tf_outputs = [gen_wn_tf_cost, gen_tf_misrate]
-    #    gen_tf_cost_ = gen_wn_tf_cost.copy('gen_tf_cost')
-    #else:
-    train_tf_outputs = [gen_tf_cost_train, gen_tf_misrate]
+    train_tf_outputs = [gen_tf_cost_train, gen_tf_misrate,
+                        y_hat_o, y_states]
     gen_tf_cost_ = gen_tf_cost_train.copy('gen_tf_cost')
 
     #all_gen_tf_grads = T.grad(gen_tf_cost_, gen_params)
@@ -374,26 +361,22 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     #train_tf_outputs.append(gen_tf_norm)
 
-    gen_tf_updates = lasagne.updates.adam(gen_tf_cost_,
-                                          gen_params,
-                                          learning_rate,
-                                          beta1=.9,
-                                          beta2=.999)
-
+    gen_tf_updates = adam(gen_tf_cost_,
+                          gen_params,
+                          learning_rate)
     gen_tf_func = theano.function(inputs=[x, input_mask, y],
                                   outputs=train_tf_outputs,
                                   updates=gen_tf_updates)
 
     gen_tf_eval = theano.function(inputs=[x, input_mask, y],
-                                  outputs=[gen_tf_cost_train, gen_tf_misrate])
+                                  outputs=[gen_tf_cost_train,
+                                           gen_tf_misrate,
+                                           y_hat_o, y_states])
 
 
     print '.. compile generator with sampling mode'
-    #if weight_noise > 0:
-    #    train_gen_outputs = [gen_wn_gen_cost, gen_sample_misrate]
-    #    gen_sample_cost_ = gen_wn_gen_cost.copy('gen_sample_cost')
-    #else:
-    train_gen_outputs = [gen_cost_train, gen_sample_misrate]
+    train_gen_outputs = [gen_cost_train, gen_sample_misrate,
+                         gen_soft_o, gen_states_o]
     gen_sample_cost_ = gen_cost_train.copy('gen_sample_cost')
 
     #all_gen_sample_grads = T.grad(gen_sample_cost_, gen_params)
@@ -403,10 +386,9 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     #train_gen_outputs.append(gen_sample_norm)
 
-    gen_sample_updates = lasagne.updates.adam(gen_sample_cost_,
-                                              gen_params,
-                                              learning_rate / 5.,
-                                              beta1=.9)
+    gen_sample_updates = adam(gen_sample_cost_,
+                              gen_params,
+                              learning_rate)
     gen_sample_updates.update(gen_scan_up.items())
     gen_sample_func = theano.function(inputs=[x, input_mask, y, y0_gen],
                                       outputs=train_gen_outputs,
@@ -414,7 +396,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     gen_sample_eval = theano.function(inputs=[x, input_mask, y, y0_gen],
                                       outputs=[gen_cost_train,
-                                               gen_sample_misrate],
+                                               gen_sample_misrate,
+                                               gen_soft_o, gen_states_o],
                                       updates=gen_scan_up)
 
     t1 = time.time()
@@ -444,8 +427,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         for data in train_stream.get_epoch_iterator():
             num_batches += 1
 
-            cost_val, misrate_val = gen_tf_func(data[0], data[1],
-                                                      data[2])
+            cost_val, misrate_val, _, _ = gen_tf_func(data[0], data[1],
+                                                   data[2])
             #all_norms += norm
             loop_log[(pre_ep, 'pretrain_tf_cost')] += cost_val
             loop_log[(pre_ep, 'pretrain_tf_misrate')] += misrate_val
@@ -466,8 +449,8 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         misrate_val_eval = 0.
         for data in dev_stream.get_epoch_iterator():
             num_batches += 1
-            cost_val, misrate_val = gen_tf_eval(data[0], data[1],
-                                                data[2])
+            cost_val, misrate_val, _, _ = gen_tf_eval(data[0], data[1],
+                                                      data[2])
             cost_val_eval += cost_val
             misrate_val_eval += misrate_val
 
@@ -498,13 +481,11 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
         loop_log[(-1, 'disc_tf_misrate_eval')] = 1
         loop_log[(-1, 'disc_gen_misrate_eval')] = 1
         loop_log['iterations'] = 0
+
         print '################## Epoch {} ###################'.format(ep)
 
         num_batches = 0
         t0 = time.time()
-        #disc_all_norms = 0.
-        #gen_sample_all_norms = 0.
-        #gen_tf_all_norms = 0.
 
         for data in train_stream.get_epoch_iterator():
             num_batches += 1
@@ -513,28 +494,40 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                    label_dim)).astype('int32')
             y0_gen_val[:, 0] = 1
 
-            if loop_log[(ep-1, 'disc_tf_misrate_eval')] < 0.05 and \
-                loop_log[(ep-1, 'disc_gen_misrate_eval')] < 0.15:
-                    pass
-            else:
-                cost_val, misrate_tf_val, misrate_gen_val = disc_func(data[0], data[1],
-                                                                      data[2], y0_gen_val)
+            #if loop_log[(ep-1, 'disc_tf_misrate_eval')] < 0.05 and \
+            #    loop_log[(ep-1, 'disc_gen_misrate_eval')] < 0.15:
+            #        pass
+            #else:
+            _, _, gen_tf_sample, gen_tf_states = gen_tf_eval(data[0],
+                                                             data[1],
+                                                             data[2])
+            (cost_val,
+             misrate_val,
+             gen_free_sample,
+             gen_free_states) = gen_sample_func(data[0], data[1],
+                                                data[2], y0_gen_val)
 
-           # #disc_all_norms += norm
-                loop_log[(ep, 'disc_cost')] += cost_val
-                loop_log[(ep, 'disc_tf_misrate')] += misrate_tf_val
-                loop_log[(ep, 'disc_gen_misrate')] += misrate_gen_val
-
-            cost_val, misrate_val = gen_sample_func(data[0], data[1],
-                                                          data[2], y0_gen_val)
-
-           # #gen_sample_all_norms += norm
+            #gen_sample_all_norms += norm
             loop_log[(ep, 'gen_sample_cost')] += cost_val
             loop_log[(ep, 'gen_sample_misrate')] += misrate_val
 
-            cost_val, misrate_val = gen_tf_func(data[0], data[1],
-                                                      data[2])
+
+            gen_tf = np.concatenate(gen_tf_sample, gen_tf_states,
+                                    data[0], axis=2)
+            gen_free = np.concatenate(gen_free_sample, gen_free_states,
+                                      data[0], axis=2)
+            cost_val, misrate_tf_val, misrate_gen_val = disc_func(gen_tf,
+                                                                  gen_free,
+                                                                  data[2])
+
+           # #disc_all_norms += norm
+            loop_log[(ep, 'disc_cost')] += cost_val
+            loop_log[(ep, 'disc_tf_misrate')] += misrate_tf_val
+            loop_log[(ep, 'disc_gen_misrate')] += misrate_gen_val
+
             #gen_tf_all_norms += norm
+            cost_val, misrate_val, _, _ = gen_tf_func(data[0], data[1],
+                                                      data[2])
 
             loop_log[(ep, 'gen_tf_cost')] += cost_val
             loop_log[(ep, 'gen_tf_misrate')] += misrate_val
@@ -585,22 +578,36 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                                    label_dim)).astype('int32')
             y0_gen_val[:, 0] = 1
 
-            cost_val, misrate_tf_val, misrate_gen_val = disc_eval(data[0], data[1],
-                                                                  data[2], y0_gen_val)
+            (cost_val,
+             misrate_val,
+             gen_free_sample,
+             gen_free_states) = gen_sample_eval(data[0], data[1],
+                                                data[2], y0_gen_val)
+            loop_log[(ep, 'gen_sample_cost_eval')] += cost_val
+            loop_log[(ep, 'gen_sample_misrate_eval')] += misrate_val
+
+            (cost_val,
+             misrate_val,
+             gen_tf_sample,
+             gen_tf_states) = gen_tf_eval(data[0], data[1],
+                                          data[2])
+            loop_log[(ep, 'gen_tf_cost_eval')] += cost_val
+            loop_log[(ep, 'gen_tf_misrate_eval')] += misrate_val
+
+            gen_tf = np.concatenate(gen_tf_sample, gen_tf_states,
+                                    data[0], axis=2)
+            gen_free = np.concatenate(gen_free_sample, gen_free_states,
+                                      data[0], axis=2)
+
+            cost_val, misrate_tf_val, misrate_gen_val = disc_eval(gen_tf,
+                                                                  gen_free,
+                                                                  data[2])
             loop_log[(ep, 'disc_cost_eval')] += cost_val
             loop_log[(ep, 'disc_tf_misrate_eval')] += misrate_tf_val
             loop_log[(ep, 'disc_gen_misrate_eval')] += misrate_gen_val
 
-            cost_val, misrate_val = gen_sample_eval(data[0], data[1],
-                                                    data[2], y0_gen_val)
-            loop_log[(ep, 'gen_sample_cost_eval')] += cost_val
-            loop_log[(ep, 'gen_sample_misrate_eval')] += misrate_val
 
 
-            cost_val, misrate_val = gen_tf_eval(data[0], data[1],
-                                                data[2])
-            loop_log[(ep, 'gen_tf_cost_eval')] += cost_val
-            loop_log[(ep, 'gen_tf_misrate_eval')] += misrate_val
 
         loop_log[(ep, 'gen_tf_cost_eval')] = \
                 loop_log[(ep, 'gen_tf_cost_eval')] / num_batches

@@ -1,8 +1,9 @@
 from blocks.bricks import (application, lazy, Initializable,
-                           Tanh, Linear, MLP, Softmax)
+                           Tanh, Linear, MLP, Softmax, Rectifier)
 from blocks.bricks.parallel import Fork
 from blocks.bricks.recurrent import (Bidirectional, SimpleRecurrent, LSTM,
                                      GatedRecurrent)
+from blocks.initialization import IsotropicGaussian, Constant, Orthogonal, Uniform
 
 from blocks.bricks.lookup import LookupTable
 from blocks.utils import dict_union
@@ -163,10 +164,15 @@ class MultiLayerEncoder(Initializable):
                                       for i in range(len(networks))]
 
         self.out_linear_trans = Linear(name='out_linear', **kwargs)
+        self.mlp = MLP(activations=[Rectifier(), Rectifier(), Rectifier()],
+                       dims=[self.dims[1]*2, self.dims[1], self.dims[1],
+                             self.dims[1]],
+                       weights_init=Uniform(width=.2),
+                       biases_init=Constant(0.))
         self.children = (networks +
                          self.hid_linear_trans_forw +
                          self.hid_linear_trans_back +
-                         [self.out_linear_trans])
+                         [self.mlp, self.out_linear_trans])
         self.num_layers = len(networks)
 
     @application
@@ -181,7 +187,7 @@ class MultiLayerEncoder(Initializable):
                                                 transformed_x_back,
                                                 input_mask,
                                                 *args, **kwargs)
-        encoder_out = self.out_linear_trans.apply(raw_states)
+        encoder_out = self.out_linear_trans.apply(self.mlp.apply(raw_states))
         return encoder_out
 
     def _push_allocation_config(self):
@@ -212,10 +218,10 @@ class MultiLayerEncoder(Initializable):
                 [network.prototype.get_dim(name) for
                  name in layer_back.input_names]
             layer_back.use_bias = self.use_bias
-        self.out_linear_trans.input_dim = self.dims[-2] * 2
+        #self.out_linear_trans.input_dim = self.dims[-2] * 2
+        self.out_linear_trans.input_dim = self.dims[-2]
         self.out_linear_trans.output_dim = self.dims[-1]
         self.out_linear_trans.use_bias = self.use_bias
-
 
 class GeneratorTest(Initializable):
     @lazy()
