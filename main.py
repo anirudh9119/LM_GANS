@@ -177,6 +177,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
     y_hat_o, y_states = generator.apply(x, input_mask, targets=encoding_y[:-1])
     shape = y_hat_o.shape
     y_hat = Softmax().apply(y_hat_o.reshape((-1, shape[-1]))).reshape(shape)
+    disc_i_tf = T.concatenate([y_hat_o, y_states, x], axis=2).astype('float32')
 
     ###############
     #SAMPLING MODE#
@@ -185,6 +186,10 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
             gen_cells_o, gen_soft_o, gen_scan_up) = generator.apply(x, input_mask,
                                                                     targets=y0_gen,
                                                                     tf=False)
+    disc_i_gen = T.concatenate([gen_soft_o,
+                               gen_states_o,
+                               x],
+                               axis=2).astype('float32')
     #####################
     #BUILD DISCRIMINATOR#
     #####################
@@ -209,10 +214,7 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
 
     discriminator.initialize()
 
-    disc_tf = T.tensor3('disc_tf')
-    disc_gen = T.tensor3('disc_gen')
-
-    disc_i = T.concatenate([disc_tf, disc_gen], axis=1).astype('float32')
+    disc_i = T.concatenate([disc_i_tf, disc_i_gen], axis=1).astype('float32')
 
     input_mask_ = T.repeat(input_mask, 2, axis=1)
 
@@ -341,11 +343,11 @@ def train(input_dim, gen_dim, disc_dim, label_dim, epochs,
                         disc_params,
                         learning_rate)
 
-    disc_func = theano.function(inputs=[disc_tf, disc_gen, input_mask],
+    disc_func = theano.function(inputs=[disc_i_tf, disc_i_gen, input_mask],
                                 outputs=train_disc_outputs,
                                 updates=disc_updates)
 
-    disc_eval = theano.function(inputs=[disc_tf, disc_gen, input_mask],
+    disc_eval = theano.function(inputs=[disc_i_tf, disc_i_gen, input_mask],
                                 outputs=[disc_cost_train, disc_tf_misrate,
                                          disc_gen_misrate])
 
