@@ -1,7 +1,7 @@
 import numpy
 import numpy as np
 
-def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=None, maxlen=30, argmax=True):
+def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=None, maxlen=30, argmax=False):
 
     initial_text_indices = []
 
@@ -22,7 +22,9 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
 
     # initial token is indicated by a -1 and initial state is zero
     next_w = -1 * numpy.ones((1,)).astype('int64')
-    next_state = numpy.zeros((1, options['dim'])).astype('float32')
+    #next_state = numpy.zeros((1, 512 * 3)).astype('float32')
+
+    next_state = tparams['initial_hidden_state_1'].get_value()
 
     next_state_lst = []
 
