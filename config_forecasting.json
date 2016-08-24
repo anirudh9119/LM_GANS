@@ -1,0 +1,53 @@
+{
+  "training": {
+    "optimizer": "adam",
+    "decay_c": 0,
+    "patience": 100,
+    "finish_after": 10000000,
+    "lrate": 0.0001,
+    "max_epochs": 5000
+  },
+  "multi": {
+    "control_port": 1568,
+    "batch_port": 1568,
+    "log_port": 1569
+  },
+  "management": {
+    "sampleFreq": 50,
+    "validFreq": 500,
+    "saveto": "/home/ubuntu/lambalex/PF_exp/logs/",
+    "reload_": false,
+    "dispFreq": 500,
+    "saveFreq": 500
+  },
+  "data": {
+    "dataset": "/home/ubuntu/lambalex/PF_exp/datafile_new_2_train.txt",
+    "valid_dataset": "/home/ubuntu/lambalex/PF_exp/datafile_new_2_valid.txt",
+    "dictionary": "/home/ubuntu/lambalex/PF_exp/dictionary_2.npz",
+    "batch_size": 16,
+    "n_words": 3800,
+    "valid_batch_size": 16,
+    "maxlen": 2251,
+    "minlen": 5
+  },
+  "model": {
+    "dim": 512,
+    "use_dropout": false,
+    "dim_word": 512,
+    "use_dropout": false,
+    "encoder": "lngru",
+    "n_words": 3800,
+    "train_generator_flag":false,
+    "flag_save_tsne": false,
+    "use_gan_objective": false,
+    "save_tsne": "/Tmp/anirudhg/LM_GANS/images/model_multiple_hidden_without_gan",
+    "model_name": "mulitple_hidden_states_without_gan",
+    "beta1" : 0.9,
+    "beta2" : 0.5,
+    "learning_rate": 0.0001,
+    "limit_desc_start": 0.70,
+    "limit_desc_end": 0.90,
+    "gan_starting_point": 100
+  }
+
+}
