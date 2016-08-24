@@ -10,8 +10,7 @@ import os
 
 from layers import get_layer
 
-
-
+batch_size = 16
 
 profile = False
 
@@ -29,6 +28,9 @@ def save_params(params, filename, symlink=None):
 
 # build a training model
 def build_GAN_model(tparams, options):
+
+    print "BUILDING GAN MODEL FROM LM_DISCRIMINATOR"
+    
     opt_ret = dict()
 
     trng = RandomStreams(1234)
@@ -54,34 +56,28 @@ def build_GAN_model(tparams, options):
 
     print "embedding dim", emb.ndim
 
-    initial_state_reshaped = tensor.concatenate([tparams['initial_hidden_state_1']] * 32, axis = 0) + 0.0 * tensor.mean(tparams['initial_hidden_state_0'])
+    initial_state_reshaped = tensor.concatenate([tparams['initial_hidden_state_1']] * batch_size, axis = 0)
 
     # pass through gru layer, recurrence here
     proj = get_layer(options['encoder'])[1](tparams, emb, options,
                                             prefix='encoder',
-                                            mask=x_mask, init_state = initial_state_reshaped[:,0:512])
+                                            mask=x_mask, init_state = initial_state_reshaped)
 
     proj[0] = proj[0] + 0.0 * tensor.sum(bern_dist) + 0.0 * tensor.sum(uniform_sampling)
 
-    proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
-                                            prefix='encoder_1',
-                                            mask=None, init_state = initial_state_reshaped[:,512:512*2])
-
-    proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
-                                            prefix='encoder_2',
-                                            mask=None, init_state = initial_state_reshaped[:,512*2:512*3])
 
     #1024 x 30
 
-    states_concat = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 2)
+    states_concat = proj[0]
     
     # compute word probabilities
-    logit_lstm = get_layer('ff')[1](tparams, proj_2[0], options,
+    logit_lstm = get_layer('ff')[1](tparams, proj[0], options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
 
-    logit_init = tensor.tanh(logit_lstm + logit_prev)
+    logit_init = logit_lstm + logit_prev
+    logit_init = tensor.tanh(logit_init)
 
     #proj_h = proj[0]
     #opt_ret['proj_h'] = proj_h

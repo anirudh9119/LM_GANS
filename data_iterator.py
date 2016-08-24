@@ -1,6 +1,6 @@
 import cPickle as pkl
 import gzip
-
+import numpy as np
 
 class TextIterator:
     def __init__(self, source,
@@ -13,8 +13,12 @@ class TextIterator:
             self.source = gzip.open(source, 'r')
         else:
             self.source = open(source, 'r')
-        with open(source_dict, 'rb') as f:
-            self.source_dict = pkl.load(f)
+        
+        a = np.load(source_dict)
+        self.source_dict = a['arr_0'][1]
+        
+        #with open(source_dict, 'rb') as f:
+        #    self.source_dict = pkl.load(f)
 
         self.batch_size = batch_size
         self.maxlen = maxlen
@@ -22,6 +26,8 @@ class TextIterator:
         self.n_words_source = n_words_source
 
         self.end_of_data = False
+
+        print "DATA ITERATOR INITIALIZED"
 
     def __iter__(self):
         return self
@@ -31,9 +37,12 @@ class TextIterator:
 
     def next(self):
         if self.end_of_data:
+            print "END OF DATA"
             self.end_of_data = False
             self.reset()
             raise StopIteration
+
+        print "CALLING DATA ITERATOR"
 
         source = []
 
@@ -54,8 +63,10 @@ class TextIterator:
                 if self.n_words_source > 0:
                     ss = [w if w < self.n_words_source else 1 for w in ss]
 
-                if len(ss) >= self.maxlen or len(ss) < self.minlen:
+                if len(ss) < self.minlen:
                     continue
+
+                ss = ss[:self.maxlen]
 
                 source.append(ss)
 
@@ -70,3 +81,5 @@ class TextIterator:
             raise StopIteration
 
         return source
+
+

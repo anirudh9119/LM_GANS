@@ -56,7 +56,10 @@ def init_tparams(params):
 # load parameters
 def load_params(path, params):
     pp = numpy.load(path)
-    for kk, vv in six.iteritems(params):
+
+    print "ITEM PP", pp.keys()
+
+    for kk, vv in six.iteritems(pp):
         if kk not in pp:
             warnings.warn('%s is not in the archive' % kk)
             continue

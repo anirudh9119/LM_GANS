@@ -15,6 +15,9 @@ import numpy
 from mimir import ServerLogger
 from platoon.channel import Controller
 
+
+logging_location = "/home/ubuntu/lambalex/PF_exp/logs/"
+
 logging.basicConfig(level=logging.INFO,
                             format='%(asctime)s:%(levelname)s:%(name)s:%(message)s')
 LOGGER = logging.getLogger(__name__)
@@ -57,7 +60,7 @@ class LMController(Controller):
         self._stop = False
 
         self.experiment_id = experiment_id
-        ServerLogger(filename='/u/lambalex/logs/pbt_char_logs/{}.log.jsonl.gz'.format(self.experiment_id),
+        ServerLogger(filename=logging_location + '{}.log.jsonl.gz'.format(self.experiment_id),
                      threaded=True, port=config['multi']['log_port'], formatter = None)
 
 
@@ -149,10 +152,10 @@ if __name__ == '__main__':
 
     print("config" + str(config))
 
-    os.mkdir('/u/lambalex/logs/mnist/' + experiment_id)
+    #os.mkdir('/u/lambalex/logs/mnist/' + experiment_id)
 
 
-    shutil.copyfile(sys.argv[1], '/u/lambalex/logs/mnist/' + experiment_id + '/config.json')
+    #shutil.copyfile(sys.argv[1], '/u/lambalex/logs/mnist/' + experiment_id + '/config.json')
     # Start controller
     l = LMController(experiment_id, config)
     l.start_batch_server()

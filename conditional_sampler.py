@@ -1,5 +1,6 @@
 import numpy
 import numpy as np
+import matplotlib.pyplot as plt
 
 def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=None, maxlen=30, argmax=False):
 
@@ -11,11 +12,15 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
         else:
             nw = 0
 
-        if nw >= 30000:
-            nw = 1
+        #if nw >= 30000:
+        #    nw = 1
 
         initial_text_indices.append(nw)
 
+
+    print initial_text_indices
+
+    print "len initial text", len(initial_text_indices)
 
     sample = []
     sample_score = 0
@@ -25,6 +30,7 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
     #next_state = numpy.zeros((1, 512 * 3)).astype('float32')
 
     next_state = tparams['initial_hidden_state_1'].get_value()
+
 
     next_state_lst = []
 
@@ -48,5 +54,8 @@ def gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, tr
             break
 
     return sample
+
+
+
 
 

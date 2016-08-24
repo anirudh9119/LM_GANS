@@ -26,7 +26,7 @@ For example, how does the model project holidays like 30 years into the future?
 
 '''
 
-text_file = open("/home/ubuntu/lambalex/PF_exp/datafile_train.txt", "r")
+text_file = open("/home/ubuntu/lambalex/PF_exp/datafile_new_train.txt", "r")
 
 import matplotlib.pyplot as plt
 
@@ -40,11 +40,11 @@ def extract_feature(lst, feature):
 
 if __name__ == "__main__":
 
-    options = {"n_words" : 2013, "dim_word" : 512, 'encoder' : 'gru', 'dim' : 512}
+    options = {"n_words" : 3000, "dim_word" : 1024, 'encoder' : 'gru', 'dim' : 1024}
 
     params = {}#init_params(options)
 
-    saved_model_loc = '/home/ubuntu/lambalex/PF_exp/logs/1471312679/1471312679.model.npz'
+    saved_model_loc = '/home/ubuntu/lambalex/PF_exp/logs/1471984055/1471984055.model.npz'
 
     dictionary = "/home/ubuntu/lambalex/PF_exp/dictionary.npz"
 
@@ -68,8 +68,12 @@ if __name__ == "__main__":
     f_next = build_sampler(tparams, options, trng, biased_sampling_term = 1.0)
 
     import random
-    for j in range(random.randint(10,200)):
-        initial_text = text_file.readline().rstrip("\n").split(" ")[:1200]
+
+    #exInd = random.randint(10,200)
+    exInd = 151
+
+    for j in range(exInd):
+        initial_text = text_file.readline().rstrip("\n").split(" ")[:1401]
 
     #initial_text = []
 
@@ -79,7 +83,10 @@ if __name__ == "__main__":
 
     for i in range(num_samples):
         t0 = time.time()
-        gs = gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=trng, maxlen=1200 + 52*6, argmax=False)
+        gs = gen_sample_conditional(tparams, f_next, options, initial_text, worddicts, trng=trng, maxlen=1801 + 52*6, argmax=False)
+
+        print "initial text", len(initial_text)
+        
         print "time", time.time() - t0
 
         gst = []
@@ -87,18 +94,20 @@ if __name__ == "__main__":
             gst.append(i2w[gs[i]])
 
 
-        plt.axvline(len(initial_text) / 6.0, color = 'red', linewidth = 3.0)
+        plt.axvline(len(initial_text) / 8.0, color = 'red', linewidth = 3.0)
         eas = extract_feature(gst, "eas")
-        dmd = extract_feature(gst, "d")
+        dmd = extract_feature(gst, "dph")
         av = extract_feature(gst, "av")
 
         samples.append(dmd)
 
         print "------------------------------------------------------"
+        print "exInd", exInd
 
         print "av", av
         print "demand", dmd
         print "dmd shape", dmd.shape[0]
+
 
         plt.plot(dmd)
         plt.show()

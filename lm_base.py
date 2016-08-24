@@ -13,7 +13,7 @@ from collections import OrderedDict
 from utils import  norm_weight
 from layers import get_layer
 
-
+batch_size = 16
 
 profile = False
 
@@ -72,14 +72,14 @@ def init_params(options):
                                               prefix='encoder',
                                               nin=options['dim_word'],
                                               dim=options['dim'])
-    params = get_layer(options['encoder'])[0](options, params,
-                                              prefix='encoder_1',
-                                              nin=options['dim'],
-                                              dim=options['dim'])
-    params = get_layer(options['encoder'])[0](options, params,
-                                              prefix='encoder_2',
-                                              nin=options['dim'],
-                                              dim=options['dim'])
+    #params = get_layer(options['encoder'])[0](options, params,
+    #                                          prefix='encoder_1',
+    #                                          nin=options['dim'],
+    #                                          dim=options['dim'])
+    #params = get_layer(options['encoder'])[0](options, params,
+    #                                          prefix='encoder_2',
+    #                                          nin=options['dim'],
+    #                                          dim=options['dim'])
     # readout
     params = get_layer('ff')[0](options, params, prefix='ff_logit_lstm',
                                 nin=options['dim'], nout=options['dim_word'],
@@ -92,8 +92,8 @@ def init_params(options):
                                 nout=options['n_words'])
 
 
-    params['initial_hidden_state_0'] = np.zeros(shape = (1, options['dim'])).astype('float32')
-    params['initial_hidden_state_1'] = np.zeros(shape = (1, 3 * options['dim'])).astype('float32')
+    #params['initial_hidden_state_0'] = np.zeros(shape = (1, options['dim'])).astype('float32')
+    params['initial_hidden_state_1'] = np.zeros(shape = (1, options['dim'])).astype('float32')
 
     return params
 
@@ -166,28 +166,16 @@ def build_sampler(tparams, options, trng,biased_sampling_term):
                                             prefix='encoder',
                                             mask=None,
                                             one_step=True,
-                                            init_state=init_state[:,:512])
+                                            init_state=init_state)
 
-    proj_1 = get_layer(options['encoder'])[1](tparams, proj[0], options,
-                                            prefix='encoder_1',
-                                            mask=None,
-                                            one_step=True,
-                                            init_state=init_state[:,512:512*2])
-
-    proj_2 = get_layer(options['encoder'])[1](tparams, proj_1[0], options,
-                                            prefix='encoder_2',
-                                            mask=None,
-                                            one_step=True,
-                                            init_state=init_state[:,512*2:512*3])
-
-    next_state = tensor.concatenate([proj[0], proj_1[0], proj_2[0]], axis = 1)
+    next_state = proj[0]
     #32 x 1024
     
 
     #next_state = proj[0]
 
     # compute the output probability dist and sample
-    logit_lstm = get_layer('ff')[1](tparams, proj_2[0], options,
+    logit_lstm = get_layer('ff')[1](tparams, proj[0], options,
                                     prefix='ff_logit_lstm', activ='linear')
     logit_prev = get_layer('ff')[1](tparams, emb, options,
                                     prefix='ff_logit_prev', activ='linear')
@@ -209,7 +197,7 @@ def build_sampler(tparams, options, trng,biased_sampling_term):
 
 
 # generate sample
-def gen_sample_batch(tparams, f_next, options, trng=None, maxlen=30, argmax=False, batch_size = 32, initial_state = None):
+def gen_sample_batch(tparams, f_next, options, trng=None, maxlen=30, argmax=False, batch_size = batch_size, initial_state = None):
 
     sample = []
     sample_score = 0
@@ -235,8 +223,6 @@ def gen_sample_batch(tparams, f_next, options, trng=None, maxlen=30, argmax=Fals
 
         #sample.append(nw)
         #sample_score += next_p[0, nw]
-        
-
         
         #if nw == 0:
         #    break
@@ -276,6 +262,8 @@ def gen_sample(tparams, f_next, options, trng=None, maxlen=30, argmax=False):
 
     return sample, sample_score, np.vstack(next_state_lst)
 
+
+
 # calculate the log probablities on a given corpus using language model
 def pred_probs(f_log_probs, prepare_data, options, iterator, maxlen, verbose=True):
     probs = []
@@ -295,7 +283,7 @@ def pred_probs(f_log_probs, prepare_data, options, iterator, maxlen, verbose=Tru
         uniform_sampling = numpy.random.uniform(size = x.flatten().shape[0])
 
         print x.shape
-        if x.shape[1] != 32:
+        if x.shape[1] != batch_size:
             continue
 
         pprobs = f_log_probs(x, x_mask, bern_dist.astype('float32'), uniform_sampling.astype('float32'))

@@ -37,13 +37,14 @@ from platoon.channel import Worker
 from mimir import RemoteLogger
 
 from six.moves import xrange
-from char_data_iterator import TextIterator
+#from char_data_iterator import TextIterator
+from data_iterator import TextIterator
 #from data import  char_sequence
 from utils import zipp, unzip, init_tparams, load_params, itemlist
 import optimizers
 
-#from Descriminator_Hidden import discriminator
-from Discriminator_Conv import discriminator
+from Descriminator_Hidden import discriminator
+#from Discriminator_Conv import discriminator
 
 from lm_base import (init_params, build_sampler,gen_sample, gen_sample_batch, pred_probs, prepare_data)
 
@@ -207,6 +208,7 @@ def train(worker, model_options, data_options,
                          n_words_source=n_words,
                          batch_size=batch_size,
                          maxlen=maxlen)
+
     valid = TextIterator(valid_dataset,
                          dictionary,
                          n_words_source=n_words,
@@ -219,7 +221,7 @@ def train(worker, model_options, data_options,
     # reload parameters
     #saved_model_loc = "/u/lambalex/logs/mnist/1462399235/1462399235.model.npz"
     #saved_model_loc = '/u/lambalex/logs/mnist/1462407058/1462407058.model.npz'
-    saved_model_loc = '/u/lambalex/logs/mnist/1462511667/1462511667.model.npz'
+    saved_model_loc = '/home/ubuntu/lambalex/PF_exp/logs/1471984055/1471984055.model.npz'
 
     if reload_ and os.path.exists(saveto):
         params = load_params(saved_model_loc, params)
@@ -250,7 +252,6 @@ def train(worker, model_options, data_options,
     #h_rf_mean = tensor.specify_shape(tensor.mean(hidden_states_sampled, axis = 1), (785, 1024 + 50 + 99))
     #mmd_score = tensor.mean((h_tf_mean - h_rf_mean)**2)
 
-
     hidden_states = consider_constant(hidden_states)
 
     hidden_states_joined = tensor.concatenate([hidden_states, hidden_states_sampled], axis = 1)
@@ -260,6 +261,7 @@ def train(worker, model_options, data_options,
 
 
     LOGGER.info('Building sampler')
+    #1.0 means unbiased
     b_sample_term = 1.0
     log.log({'sampling bias term' : b_sample_term})
     f_next = build_sampler(tparams, model_options, trng, b_sample_term)
@@ -324,8 +326,8 @@ def train(worker, model_options, data_options,
     discriminator_target = tensor.ivector()
 
 
-    d = discriminator(num_hidden = 2048,
-                      num_features = 512 + 50,
+    d = discriminator(num_hidden = 512,
+                      num_features = 2013 + 512,
                       seq_length = maxlen, mb_size = batch_size,
                       hidden_state_features = hidden_states_joined,
                       target = discriminator_target)
@@ -348,6 +350,7 @@ def train(worker, model_options, data_options,
     print tparams.keys()
 
     if use_gan_objective:
+        print "USING PROFESSOR FORCING"
         tparams_gen = []
 
         tparams_gen = tparams.values()
@@ -373,11 +376,23 @@ def train(worker, model_options, data_options,
                                                   beta1)
 
         discriminator_gan_updates = lasagne.updates.adam(d_grads,
-                                                      d.params, learning_rate,
+                                                      d.params, learning_rate * 0.1,
                                                       beta2)
 
         all_updates = generator_gan_updates
         all_updates.update(discriminator_gan_updates)
+
+        print "ABOUT TO COMPILE PF"
+
+        train_generator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
+                                          outputs = {
+                                                     'accuracy' : d.accuracy,
+                                                     'classification' : d.classification,
+                                                     'loss': d.loss,
+                                                     'd_cost': d.d_cost,
+                                                     'g_cost': d.g_cost
+                                                    },
+                                          updates = generator_gan_updates)
 
 
         train_generator_discriminator = theano.function(inputs = inps + inps_sampled + [discriminator_target],
@@ -392,13 +407,20 @@ def train(worker, model_options, data_options,
 
 #'g' : tensor.sum(tensor.abs_(tensor.grad(generator_loss, tparams.values()[0]))#'g_loss' : tensor.grad(generator_loss, tparams.values()[0])},
 
+    print "TRAINING BEGINNING"
+
     t_mb = time.time()
 
     teacher_forcing_cost = 0
     for eidx in xrange(max_epochs):
         n_samples = 0
 
+        print "FIRST LOOP"
+
         for x in train:
+
+            print "GOT X IN TRAIN"
+
             n_samples += len(x)
             uidx += 1
             use_noise.set_value(1.)
@@ -483,6 +505,7 @@ def train(worker, model_options, data_options,
                     params = best_p
                 else:
                     params = unzip(tparams)
+
                 save_params(params, saveto + "/" + model_filename)
 
             # generate some samples with the model and display them
@@ -498,13 +521,27 @@ def train(worker, model_options, data_options,
 
                 gensample = sample_batch
 
-                if random.uniform(0,1) < 0.1:
+                if random.uniform(0,1) < 0.5:
                     print "saving samples"
                     gensample_arr = numpy.asarray(gensample)
                     print "Sample shape", gensample_arr.shape
-                    sample_loc = saveto + "/sample_" + str(n_samples) + ".png"
-                    print "Saving to", sample_loc
-                    plot_image_grid(gensample_arr[:20,:784].reshape((20,1,28,28)), 4, 5, sample_loc)
+                    sample_loc = saveto + "/sample_" + str(n_samples) + ".txt"
+                    fh = open(sample_loc, "w")
+
+                    for sample in gensample:
+                        gs = []
+                        for e in sample:
+                            if e in worddicts_r:
+                                gs.append(worddicts_r[e])
+                            else:
+                                gs.append("UNK")
+
+                        fh.write(str(gs) + "\n")
+
+                    fh.flush()
+                    fh.close()
+                    #print "Saving to", sample_loc
+                    #plot_image_grid(gensample_arr[:20,:784].reshape((20,1,28,28)), 4, 5, sample_loc)
 
                 sampling_time = time.time() - t0
                 log.log({'Sampling_time': sampling_time})
@@ -557,18 +594,30 @@ def train(worker, model_options, data_options,
 
                     t0 = time.time()
                     log.log({'last_accuracy': last_acc})
-                    if False and train_generator_flag and discriminator_accuracy_moving_average > limit_desc_end:
+
+                    ran_gan = False
+
+                    if train_generator_flag and discriminator_accuracy_moving_average > limit_desc_end:
                         train_msg = "Training generator"
 
+                        results_map = train_generator(x, x_mask, bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'),
+                                                      genx, genx_mask,
+                                                      bern_dist.astype('float32'),
+                                                      uniform_sampling.astype('float32'), target)
+
+                        gen_loss = results_map['g_cost']
+                        disc_loss = results_map['d_cost']
+                        log.log({'update type' : "discriminator and generator",
+                                  'Generator_Loss': gen_loss,
+                                  'Discriminator_Loss': disc_loss})                       
 
 
-                    elif train_generator_flag and (True or discriminator_accuracy_moving_average > limit_desc_start):
+                    elif train_generator_flag:
 
                         t0 = time.time()
 
                         train_msg = "Training discriminator and generator"
-                        disc_lr_mult = numpy.asarray(1.0).astype('float32')
-                        gen_lr_mult = numpy.asarray(1.0).astype('float32')
 
                         results_map = train_generator_discriminator(x, x_mask, bern_dist.astype('float32'),
                                                       uniform_sampling.astype('float32'),
@@ -578,28 +627,13 @@ def train(worker, model_options, data_options,
 
 
 
-
                         gen_loss = results_map['g_cost']
                         disc_loss = results_map['d_cost']
                         log.log({'update type' : "discriminator and generator",
                                   'Generator_Loss': gen_loss,
                                   'Discriminator_Loss': disc_loss})
 
-                    else:
-                        pass
-                        #train_msg = "Just training discriminator"
-                        #results_map = train_discriminator(x, x_mask,
-                        #                                  bern_dist.astype('float32'),
-                        #                                  uniform_sampling.astype('float32'),
-                        #                                  genx, genx_mask, bern_dist.astype('float32'),
-                        #                                  uniform_sampling.astype('float32'), target)
-                        #gen_loss = float(results_map['g_cost'])
-                        #disc_loss = float(results_map['d_cost'])
-                        #log.log({'Epoch': eidx,
-                        #         'Iteration Number': uidx,
-                        #         'update type' : "discriminator",
-                        #         'Generator_Loss': gen_loss,
-                        #         'Discriminator_Loss': disc_loss})
+
 
                     desc_accuracy = float(results_map['accuracy'])
                     single_gen_disc_update =  time.time() - t0
@@ -631,7 +665,7 @@ def train(worker, model_options, data_options,
                         print c
                         print results_map['d_cost'], results_map['g_cost']
 
-                    for i in range(0, 32):
+                    for i in range(0, batch_size):
                         sentence_print = ""
                         for j in range(0, maxlen):
                             word_num = x[j][i]
@@ -646,10 +680,10 @@ def train(worker, model_options, data_options,
                                 "Real_Sentence_Index" : str(i),
                                 "Real_Sentence_Accuracy" :str(c[i])})
 
-                    for i in range(32, 64):
+                    for i in range(batch_size, batch_size*2):
                         sentence_print = ""
                         for j in range(0, maxlen):
-                            word_num = genx[j][i - 32]
+                            word_num = genx[j][i - batch_size]
                             #if word_num == 0:
                             #    break
                             if word_num in worddicts_r:
@@ -661,14 +695,14 @@ def train(worker, model_options, data_options,
                                  "Fake_Sentence_Index" : str(i),
                                  "Fake_Sentence" : str(c[i])})
 
-                    if numpy.isnan(c[:32].mean()) or numpy.isinf(c[:32].mean()) or numpy.isnan(c[32:].mean()) or numpy.isnan(c[32:].mean()):
+                    if numpy.isnan(c[:batch_size].mean()) or numpy.isinf(c[:batch_size].mean()) or numpy.isnan(c[batch_size:].mean()) or numpy.isnan(c[batch_size:].mean()):
                         LOGGER.info("Nan Detected with Disc cost!")
                         log.log({'disc status' : "NAN DETECTED"})
                         ipdb.set_trace()
                         continue;
 
-                    log.log({'Mean_pos_scores': c[:32].mean(),
-                             'Mean_neg_scores': c[32:].mean()})
+                    log.log({'Mean_pos_scores': c[:batch_size].mean(),
+                             'Mean_neg_scores': c[batch_size:].mean()})
 
                     #print "hidden states joined", results_map['hidden_states'].shape
 
@@ -683,6 +717,7 @@ def train(worker, model_options, data_options,
                 history_errs.append(valid_err)
 
                 if uidx == 0 or valid_err <= numpy.array(history_errs).min():
+                    print "NEW BEST PARAMETERS FOUND"
                     best_p = unzip(tparams)
                     bad_counter = 0
                 if len(history_errs) > patience and valid_err >= \
@@ -738,7 +773,7 @@ def train(worker, model_options, data_options,
 
 if __name__ == '__main__':
     LOGGER.info('Connecting to worker')
-    worker = Worker(control_port=4568)
+    worker = Worker(control_port=1568)
     LOGGER.info('Retrieving configuration')
     config = worker.send_req('config')
     train(worker, config['model'], config['data'],**merge(config['training'], config['management'], config['multi'],config['model'], config['data']))

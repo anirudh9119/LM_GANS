@@ -46,7 +46,8 @@
     "beta2" : 0.5,
     "learning_rate": 0.00001,
     "limit_desc_start": 0.70,
-    "limit_desc_end": 0.90
+    "limit_desc_end": 0.90,
+    "gan_starting_point" : 100
   }
 
 }
